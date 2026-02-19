@@ -1,14 +1,21 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
 	"github.com/evstack/apex/config"
+	"github.com/evstack/apex/pkg/fetch"
+	"github.com/evstack/apex/pkg/store"
+	syncer "github.com/evstack/apex/pkg/sync"
 )
 
 // Set via ldflags at build time.
@@ -90,10 +97,7 @@ func startCmd() *cobra.Command {
 				Int("namespaces", len(cfg.DataSource.Namespaces)).
 				Msg("starting apex indexer")
 
-			// TODO(phase1): wire store, fetcher, and sync coordinator.
-			log.Info().Msg("apex indexer is not yet implemented — scaffolding only")
-
-			return nil
+			return runIndexer(cmd.Context(), cfg)
 		},
 	}
 }
@@ -111,4 +115,57 @@ func setupLogger(cfg config.LogConfig) {
 	default:
 		log.Logger = log.Output(os.Stdout)
 	}
+}
+
+func runIndexer(ctx context.Context, cfg *config.Config) error {
+	// Parse namespaces from config.
+	namespaces, err := cfg.ParsedNamespaces()
+	if err != nil {
+		return fmt.Errorf("parse namespaces: %w", err)
+	}
+
+	// Open store.
+	db, err := store.Open(cfg.Storage.DBPath)
+	if err != nil {
+		return fmt.Errorf("open store: %w", err)
+	}
+	defer db.Close() //nolint:errcheck
+
+	// Persist configured namespaces.
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	for _, ns := range namespaces {
+		if err := db.PutNamespace(ctx, ns); err != nil {
+			return fmt.Errorf("put namespace: %w", err)
+		}
+	}
+
+	// Connect to Celestia node.
+	fetcher, err := fetch.NewCelestiaNodeFetcher(ctx, cfg.DataSource.CelestiaNodeURL, cfg.DataSource.AuthToken, log.Logger)
+	if err != nil {
+		return fmt.Errorf("connect to celestia node: %w", err)
+	}
+	defer fetcher.Close() //nolint:errcheck
+
+	// Build and run the sync coordinator.
+	coord := syncer.New(db, fetcher,
+		syncer.WithStartHeight(cfg.Sync.StartHeight),
+		syncer.WithBatchSize(cfg.Sync.BatchSize),
+		syncer.WithConcurrency(cfg.Sync.Concurrency),
+		syncer.WithLogger(log.Logger),
+	)
+
+	log.Info().
+		Int("namespaces", len(namespaces)).
+		Uint64("start_height", cfg.Sync.StartHeight).
+		Msg("sync coordinator starting")
+
+	err = coord.Run(ctx)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		return fmt.Errorf("coordinator: %w", err)
+	}
+
+	log.Info().Msg("apex indexer stopped")
+	return nil
 }

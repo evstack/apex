@@ -23,6 +23,9 @@ coverage.html
 # Local config
 config.local.yaml
 
+# Project
+ISSUES.md
+
 # OS
 .DS_Store
 Thumbs.db

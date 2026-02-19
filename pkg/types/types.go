@@ -33,6 +33,7 @@ func (n Namespace) String() string {
 
 // Blob represents a blob submitted to a Celestia namespace.
 type Blob struct {
+	Height       uint64
 	Namespace    Namespace
 	Data         []byte
 	Commitment   []byte

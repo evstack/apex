@@ -14,12 +14,14 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
 
 	"github.com/evstack/apex/config"
 	"github.com/evstack/apex/pkg/api"
 	grpcapi "github.com/evstack/apex/pkg/api/grpc"
 	jsonrpcapi "github.com/evstack/apex/pkg/api/jsonrpc"
 	"github.com/evstack/apex/pkg/fetch"
+	"github.com/evstack/apex/pkg/metrics"
 	"github.com/evstack/apex/pkg/store"
 	syncer "github.com/evstack/apex/pkg/sync"
 	"github.com/evstack/apex/pkg/types"
@@ -43,9 +45,15 @@ func rootCmd() *cobra.Command {
 
 	root.PersistentFlags().String("config", "config.yaml", "path to config file")
 
+	root.PersistentFlags().String("rpc-addr", "localhost:8080", "JSON-RPC server address")
+	root.PersistentFlags().String("format", "json", "output format (json, table)")
+
 	root.AddCommand(versionCmd())
 	root.AddCommand(initCmd())
 	root.AddCommand(startCmd())
+	root.AddCommand(statusCmd())
+	root.AddCommand(blobCmd())
+	root.AddCommand(configCmd())
 
 	return root
 }
@@ -124,6 +132,20 @@ func setupLogger(cfg config.LogConfig) {
 	}
 }
 
+func setupMetrics(cfg *config.Config) (metrics.Recorder, *metrics.Server) {
+	if !cfg.Metrics.Enabled {
+		return metrics.Nop(), nil
+	}
+	rec := metrics.NewPromRecorder(nil, version)
+	srv := metrics.NewServer(cfg.Metrics.ListenAddr, log.Logger)
+	go func() {
+		if err := srv.Start(); err != nil {
+			log.Error().Err(err).Msg("metrics server error")
+		}
+	}()
+	return rec, srv
+}
+
 func runIndexer(ctx context.Context, cfg *config.Config) error {
 	// Parse namespaces from config.
 	namespaces, err := cfg.ParsedNamespaces()
@@ -131,12 +153,15 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("parse namespaces: %w", err)
 	}
 
+	rec, metricsSrv := setupMetrics(cfg)
+
 	// Open store.
 	db, err := store.Open(cfg.Storage.DBPath)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}
 	defer db.Close() //nolint:errcheck
+	db.SetMetrics(rec)
 
 	// Persist configured namespaces.
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
@@ -157,6 +182,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 
 	// Set up API layer.
 	notifier := api.NewNotifier(cfg.Subscription.BufferSize, log.Logger)
+	notifier.SetMetrics(rec)
 	svc := api.NewService(db, fetcher, fetcher, notifier, log.Logger)
 
 	// Build and run the sync coordinator with observer hook.
@@ -165,16 +191,23 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		syncer.WithBatchSize(cfg.Sync.BatchSize),
 		syncer.WithConcurrency(cfg.Sync.Concurrency),
 		syncer.WithLogger(log.Logger),
+		syncer.WithMetrics(rec),
 		syncer.WithObserver(func(h uint64, hdr *types.Header, blobs []types.Blob) {
 			notifier.Publish(api.HeightEvent{Height: h, Header: hdr, Blobs: blobs})
 		}),
 	)
 
-	// Start JSON-RPC server.
+	// Build HTTP mux: mount health endpoints alongside JSON-RPC.
 	rpcServer := jsonrpcapi.NewServer(svc, log.Logger)
+	healthHandler := api.NewHealthHandler(coord, db, notifier, version)
+
+	mux := http.NewServeMux()
+	healthHandler.Register(mux)
+	mux.Handle("/", rpcServer)
+
 	httpSrv := &http.Server{
 		Addr:              cfg.RPC.ListenAddr,
-		Handler:           rpcServer,
+		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -207,7 +240,17 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 
 	err = coord.Run(ctx)
 
-	// Graceful shutdown.
+	gracefulShutdown(httpSrv, grpcSrv, metricsSrv)
+
+	if err != nil && !errors.Is(err, context.Canceled) {
+		return fmt.Errorf("coordinator: %w", err)
+	}
+
+	log.Info().Msg("apex indexer stopped")
+	return nil
+}
+
+func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *metrics.Server) {
 	stopped := make(chan struct{})
 	go func() {
 		grpcSrv.GracefulStop()
@@ -224,14 +267,13 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
-	if shutdownErr := httpSrv.Shutdown(shutdownCtx); shutdownErr != nil {
-		log.Error().Err(shutdownErr).Msg("JSON-RPC server shutdown error")
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("JSON-RPC server shutdown error")
 	}
 
-	if err != nil && !errors.Is(err, context.Canceled) {
-		return fmt.Errorf("coordinator: %w", err)
+	if metricsSrv != nil {
+		if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
+			log.Error().Err(err).Msg("metrics server shutdown error")
+		}
 	}
-
-	log.Info().Msg("apex indexer stopped")
-	return nil
 }

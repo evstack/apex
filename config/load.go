@@ -60,6 +60,12 @@ subscription:
   # Event buffer size per subscriber (for API subscriptions)
   buffer_size: 64
 
+metrics:
+  # Enable Prometheus metrics endpoint
+  enabled: true
+  # Address for the metrics server
+  listen_addr: ":9091"
+
 log:
   # Log level: trace, debug, info, warn, error, fatal, panic
   level: "info"
@@ -121,6 +127,9 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Subscription.BufferSize <= 0 {
 		return fmt.Errorf("subscription.buffer_size must be positive")
+	}
+	if cfg.Metrics.Enabled && cfg.Metrics.ListenAddr == "" {
+		return fmt.Errorf("metrics.listen_addr is required when metrics are enabled")
 	}
 	if !validLogLevels[cfg.Log.Level] {
 		return fmt.Errorf("log.level %q is invalid; must be one of trace/debug/info/warn/error/fatal/panic", cfg.Log.Level)

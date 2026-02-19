@@ -11,7 +11,6 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -33,13 +32,13 @@ const (
 // HeaderService provides access to indexed headers.
 type HeaderServiceClient interface {
 	// GetByHeight returns the header at the given height.
-	GetByHeight(ctx context.Context, in *GetHeaderRequest, opts ...grpc.CallOption) (*Header, error)
+	GetByHeight(ctx context.Context, in *GetByHeightRequest, opts ...grpc.CallOption) (*GetByHeightResponse, error)
 	// LocalHead returns the header at the latest synced height.
-	LocalHead(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Header, error)
+	LocalHead(ctx context.Context, in *LocalHeadRequest, opts ...grpc.CallOption) (*LocalHeadResponse, error)
 	// NetworkHead returns the current network head from the upstream node.
-	NetworkHead(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Header, error)
+	NetworkHead(ctx context.Context, in *NetworkHeadRequest, opts ...grpc.CallOption) (*NetworkHeadResponse, error)
 	// Subscribe streams new headers as they are indexed.
-	Subscribe(ctx context.Context, in *SubscribeHeadersRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Header], error)
+	Subscribe(ctx context.Context, in *SubscribeHeadersRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SubscribeHeadersResponse], error)
 }
 
 type headerServiceClient struct {
@@ -50,9 +49,9 @@ func NewHeaderServiceClient(cc grpc.ClientConnInterface) HeaderServiceClient {
 	return &headerServiceClient{cc}
 }
 
-func (c *headerServiceClient) GetByHeight(ctx context.Context, in *GetHeaderRequest, opts ...grpc.CallOption) (*Header, error) {
+func (c *headerServiceClient) GetByHeight(ctx context.Context, in *GetByHeightRequest, opts ...grpc.CallOption) (*GetByHeightResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Header)
+	out := new(GetByHeightResponse)
 	err := c.cc.Invoke(ctx, HeaderService_GetByHeight_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -60,9 +59,9 @@ func (c *headerServiceClient) GetByHeight(ctx context.Context, in *GetHeaderRequ
 	return out, nil
 }
 
-func (c *headerServiceClient) LocalHead(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Header, error) {
+func (c *headerServiceClient) LocalHead(ctx context.Context, in *LocalHeadRequest, opts ...grpc.CallOption) (*LocalHeadResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Header)
+	out := new(LocalHeadResponse)
 	err := c.cc.Invoke(ctx, HeaderService_LocalHead_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -70,9 +69,9 @@ func (c *headerServiceClient) LocalHead(ctx context.Context, in *emptypb.Empty, 
 	return out, nil
 }
 
-func (c *headerServiceClient) NetworkHead(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Header, error) {
+func (c *headerServiceClient) NetworkHead(ctx context.Context, in *NetworkHeadRequest, opts ...grpc.CallOption) (*NetworkHeadResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Header)
+	out := new(NetworkHeadResponse)
 	err := c.cc.Invoke(ctx, HeaderService_NetworkHead_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -80,13 +79,13 @@ func (c *headerServiceClient) NetworkHead(ctx context.Context, in *emptypb.Empty
 	return out, nil
 }
 
-func (c *headerServiceClient) Subscribe(ctx context.Context, in *SubscribeHeadersRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Header], error) {
+func (c *headerServiceClient) Subscribe(ctx context.Context, in *SubscribeHeadersRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SubscribeHeadersResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &HeaderService_ServiceDesc.Streams[0], HeaderService_Subscribe_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[SubscribeHeadersRequest, Header]{ClientStream: stream}
+	x := &grpc.GenericClientStream[SubscribeHeadersRequest, SubscribeHeadersResponse]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -97,7 +96,7 @@ func (c *headerServiceClient) Subscribe(ctx context.Context, in *SubscribeHeader
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type HeaderService_SubscribeClient = grpc.ServerStreamingClient[Header]
+type HeaderService_SubscribeClient = grpc.ServerStreamingClient[SubscribeHeadersResponse]
 
 // HeaderServiceServer is the server API for HeaderService service.
 // All implementations must embed UnimplementedHeaderServiceServer
@@ -106,13 +105,13 @@ type HeaderService_SubscribeClient = grpc.ServerStreamingClient[Header]
 // HeaderService provides access to indexed headers.
 type HeaderServiceServer interface {
 	// GetByHeight returns the header at the given height.
-	GetByHeight(context.Context, *GetHeaderRequest) (*Header, error)
+	GetByHeight(context.Context, *GetByHeightRequest) (*GetByHeightResponse, error)
 	// LocalHead returns the header at the latest synced height.
-	LocalHead(context.Context, *emptypb.Empty) (*Header, error)
+	LocalHead(context.Context, *LocalHeadRequest) (*LocalHeadResponse, error)
 	// NetworkHead returns the current network head from the upstream node.
-	NetworkHead(context.Context, *emptypb.Empty) (*Header, error)
+	NetworkHead(context.Context, *NetworkHeadRequest) (*NetworkHeadResponse, error)
 	// Subscribe streams new headers as they are indexed.
-	Subscribe(*SubscribeHeadersRequest, grpc.ServerStreamingServer[Header]) error
+	Subscribe(*SubscribeHeadersRequest, grpc.ServerStreamingServer[SubscribeHeadersResponse]) error
 	mustEmbedUnimplementedHeaderServiceServer()
 }
 
@@ -123,16 +122,16 @@ type HeaderServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedHeaderServiceServer struct{}
 
-func (UnimplementedHeaderServiceServer) GetByHeight(context.Context, *GetHeaderRequest) (*Header, error) {
+func (UnimplementedHeaderServiceServer) GetByHeight(context.Context, *GetByHeightRequest) (*GetByHeightResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetByHeight not implemented")
 }
-func (UnimplementedHeaderServiceServer) LocalHead(context.Context, *emptypb.Empty) (*Header, error) {
+func (UnimplementedHeaderServiceServer) LocalHead(context.Context, *LocalHeadRequest) (*LocalHeadResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method LocalHead not implemented")
 }
-func (UnimplementedHeaderServiceServer) NetworkHead(context.Context, *emptypb.Empty) (*Header, error) {
+func (UnimplementedHeaderServiceServer) NetworkHead(context.Context, *NetworkHeadRequest) (*NetworkHeadResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method NetworkHead not implemented")
 }
-func (UnimplementedHeaderServiceServer) Subscribe(*SubscribeHeadersRequest, grpc.ServerStreamingServer[Header]) error {
+func (UnimplementedHeaderServiceServer) Subscribe(*SubscribeHeadersRequest, grpc.ServerStreamingServer[SubscribeHeadersResponse]) error {
 	return status.Error(codes.Unimplemented, "method Subscribe not implemented")
 }
 func (UnimplementedHeaderServiceServer) mustEmbedUnimplementedHeaderServiceServer() {}
@@ -157,7 +156,7 @@ func RegisterHeaderServiceServer(s grpc.ServiceRegistrar, srv HeaderServiceServe
 }
 
 func _HeaderService_GetByHeight_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetHeaderRequest)
+	in := new(GetByHeightRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -169,13 +168,13 @@ func _HeaderService_GetByHeight_Handler(srv interface{}, ctx context.Context, de
 		FullMethod: HeaderService_GetByHeight_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(HeaderServiceServer).GetByHeight(ctx, req.(*GetHeaderRequest))
+		return srv.(HeaderServiceServer).GetByHeight(ctx, req.(*GetByHeightRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _HeaderService_LocalHead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(emptypb.Empty)
+	in := new(LocalHeadRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -187,13 +186,13 @@ func _HeaderService_LocalHead_Handler(srv interface{}, ctx context.Context, dec 
 		FullMethod: HeaderService_LocalHead_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(HeaderServiceServer).LocalHead(ctx, req.(*emptypb.Empty))
+		return srv.(HeaderServiceServer).LocalHead(ctx, req.(*LocalHeadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _HeaderService_NetworkHead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(emptypb.Empty)
+	in := new(NetworkHeadRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -205,7 +204,7 @@ func _HeaderService_NetworkHead_Handler(srv interface{}, ctx context.Context, de
 		FullMethod: HeaderService_NetworkHead_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(HeaderServiceServer).NetworkHead(ctx, req.(*emptypb.Empty))
+		return srv.(HeaderServiceServer).NetworkHead(ctx, req.(*NetworkHeadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -215,11 +214,11 @@ func _HeaderService_Subscribe_Handler(srv interface{}, stream grpc.ServerStream)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(HeaderServiceServer).Subscribe(m, &grpc.GenericServerStream[SubscribeHeadersRequest, Header]{ServerStream: stream})
+	return srv.(HeaderServiceServer).Subscribe(m, &grpc.GenericServerStream[SubscribeHeadersRequest, SubscribeHeadersResponse]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type HeaderService_SubscribeServer = grpc.ServerStreamingServer[Header]
+type HeaderService_SubscribeServer = grpc.ServerStreamingServer[SubscribeHeadersResponse]
 
 // HeaderService_ServiceDesc is the grpc.ServiceDesc for HeaderService service.
 // It's only intended for direct use with grpc.RegisterService,

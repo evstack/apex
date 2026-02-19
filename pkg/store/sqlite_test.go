@@ -102,7 +102,7 @@ func TestPutGetBlobs(t *testing.T) {
 	}
 
 	// GetBlobs range
-	all, err := s.GetBlobs(ctx, ns, 10, 11)
+	all, err := s.GetBlobs(ctx, ns, 10, 11, 0, 0)
 	if err != nil {
 		t.Fatalf("GetBlobs: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestPutBlobsIdempotent(t *testing.T) {
 		t.Fatalf("PutBlobs (second): %v", err)
 	}
 
-	all, err := s.GetBlobs(ctx, ns, 10, 10)
+	all, err := s.GetBlobs(ctx, ns, 10, 10, 0, 0)
 	if err != nil {
 		t.Fatalf("GetBlobs: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestGetBlobsEmptyRange(t *testing.T) {
 	s := openTestDB(t)
 	ctx := context.Background()
 
-	blobs, err := s.GetBlobs(ctx, testNamespace(1), 1, 100)
+	blobs, err := s.GetBlobs(ctx, testNamespace(1), 1, 100, 0, 0)
 	if err != nil {
 		t.Fatalf("GetBlobs: %v", err)
 	}

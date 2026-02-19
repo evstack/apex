@@ -2,15 +2,16 @@ package grpcapi
 
 import (
 	"context"
+	"errors"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/evstack/apex/pkg/api"
 	pb "github.com/evstack/apex/pkg/api/grpc/gen/apex/v1"
+	"github.com/evstack/apex/pkg/store"
 	"github.com/evstack/apex/pkg/types"
 )
 
@@ -20,35 +21,44 @@ type HeaderServiceServer struct {
 	svc *api.Service
 }
 
-func (s *HeaderServiceServer) GetByHeight(ctx context.Context, req *pb.GetHeaderRequest) (*pb.Header, error) {
+func (s *HeaderServiceServer) GetByHeight(ctx context.Context, req *pb.GetByHeightRequest) (*pb.GetByHeightResponse, error) {
 	hdr, err := s.svc.Store().GetHeader(ctx, req.Height)
 	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "header at height %d not found", req.Height)
+		}
 		return nil, status.Errorf(codes.Internal, "get header: %v", err)
 	}
-	return headerToProto(hdr), nil
+	return &pb.GetByHeightResponse{Header: headerToProto(hdr)}, nil
 }
 
-func (s *HeaderServiceServer) LocalHead(ctx context.Context, _ *emptypb.Empty) (*pb.Header, error) {
+func (s *HeaderServiceServer) LocalHead(ctx context.Context, _ *pb.LocalHeadRequest) (*pb.LocalHeadResponse, error) {
 	ss, err := s.svc.Store().GetSyncState(ctx)
 	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "no sync state available")
+		}
 		return nil, status.Errorf(codes.Internal, "get sync state: %v", err)
 	}
 	hdr, err := s.svc.Store().GetHeader(ctx, ss.LatestHeight)
 	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "header at height %d not found", ss.LatestHeight)
+		}
 		return nil, status.Errorf(codes.Internal, "get header: %v", err)
 	}
-	return headerToProto(hdr), nil
+	return &pb.LocalHeadResponse{Header: headerToProto(hdr)}, nil
 }
 
-func (s *HeaderServiceServer) NetworkHead(ctx context.Context, _ *emptypb.Empty) (*pb.Header, error) {
+func (s *HeaderServiceServer) NetworkHead(ctx context.Context, _ *pb.NetworkHeadRequest) (*pb.NetworkHeadResponse, error) {
 	hdr, err := s.svc.Fetcher().GetNetworkHead(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "get network head: %v", err)
 	}
-	return headerToProto(hdr), nil
+	return &pb.NetworkHeadResponse{Header: headerToProto(hdr)}, nil
 }
 
-func (s *HeaderServiceServer) Subscribe(_ *pb.SubscribeHeadersRequest, stream grpc.ServerStreamingServer[pb.Header]) error {
+func (s *HeaderServiceServer) Subscribe(_ *pb.SubscribeHeadersRequest, stream grpc.ServerStreamingServer[pb.SubscribeHeadersResponse]) error {
 	sub := s.svc.HeaderSubscribe()
 	defer s.svc.Notifier().Unsubscribe(sub)
 
@@ -62,7 +72,7 @@ func (s *HeaderServiceServer) Subscribe(_ *pb.SubscribeHeadersRequest, stream gr
 				return nil
 			}
 			if ev.Header != nil {
-				if err := stream.Send(headerToProto(ev.Header)); err != nil {
+				if err := stream.Send(&pb.SubscribeHeadersResponse{Header: headerToProto(ev.Header)}); err != nil {
 					return err
 				}
 			}

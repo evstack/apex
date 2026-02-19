@@ -93,8 +93,8 @@ func (n *Notifier) SubscriberCount() int {
 // Publish sends an event to all matching subscribers. Non-blocking: if a
 // subscriber's buffer is full the event is dropped and a gap is marked.
 func (n *Notifier) Publish(event HeightEvent) {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
+	n.mu.Lock()
+	defer n.mu.Unlock()
 
 	for _, sub := range n.subscribers {
 		filtered := n.filterEvent(event, sub)

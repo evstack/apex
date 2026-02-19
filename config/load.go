@@ -107,6 +107,9 @@ func validate(cfg *Config) error {
 	if cfg.Storage.DBPath == "" {
 		return fmt.Errorf("storage.db_path is required")
 	}
+	if cfg.RPC.ListenAddr == "" {
+		return fmt.Errorf("rpc.listen_addr is required")
+	}
 	if cfg.RPC.GRPCListenAddr == "" {
 		return fmt.Errorf("rpc.grpc_listen_addr is required")
 	}

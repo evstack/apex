@@ -11,19 +11,6 @@ var (
 	errReadOnly     = fmt.Errorf("apex is a read-only indexer, blob submission not supported")
 )
 
-// BlobStubs holds stub methods for unsupported blob operations.
-type BlobStubs struct{}
-
-// GetCommitmentProof is not supported by the indexer.
-func (s *BlobStubs) GetCommitmentProof(_ context.Context, _ uint64, _ []byte, _ []byte) (json.RawMessage, error) {
-	return nil, errNotSupported
-}
-
-// Submit is not supported — apex is read-only.
-func (s *BlobStubs) Submit(_ context.Context, _ json.RawMessage, _ json.RawMessage) (json.RawMessage, error) {
-	return nil, errReadOnly
-}
-
 // ShareStub holds stub methods for the share namespace.
 type ShareStub struct{}
 

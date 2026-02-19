@@ -39,7 +39,7 @@ func NewService(s store.Store, f fetch.DataFetcher, proof fetch.ProofForwarder, 
 // BlobGet returns a single blob matching the namespace and commitment at the
 // given height. Returns the blob as celestia-node compatible JSON.
 func (s *Service) BlobGet(ctx context.Context, height uint64, namespace types.Namespace, commitment []byte) (json.RawMessage, error) {
-	blobs, err := s.store.GetBlobs(ctx, namespace, height, height)
+	blobs, err := s.store.GetBlobs(ctx, namespace, height, height, 0, 0)
 	if err != nil {
 		return nil, fmt.Errorf("get blobs: %w", err)
 	}
@@ -54,10 +54,11 @@ func (s *Service) BlobGet(ctx context.Context, height uint64, namespace types.Na
 }
 
 // BlobGetAll returns all blobs for the given namespaces at the given height.
-func (s *Service) BlobGetAll(ctx context.Context, height uint64, namespaces []types.Namespace) (json.RawMessage, error) {
+// limit=0 means no limit; offset=0 means no offset.
+func (s *Service) BlobGetAll(ctx context.Context, height uint64, namespaces []types.Namespace, limit, offset int) (json.RawMessage, error) {
 	var allBlobs []types.Blob
 	for _, ns := range namespaces {
-		blobs, err := s.store.GetBlobs(ctx, ns, height, height)
+		blobs, err := s.store.GetBlobs(ctx, ns, height, height, limit, offset)
 		if err != nil {
 			return nil, fmt.Errorf("get blobs for namespace %s: %w", ns, err)
 		}

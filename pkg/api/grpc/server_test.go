@@ -10,7 +10,6 @@ import (
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/evstack/apex/pkg/api"
 	pb "github.com/evstack/apex/pkg/api/grpc/gen/apex/v1"
@@ -48,7 +47,7 @@ func (m *mockStore) GetBlob(_ context.Context, ns types.Namespace, height uint64
 	return nil, store.ErrNotFound
 }
 
-func (m *mockStore) GetBlobs(_ context.Context, ns types.Namespace, startHeight, endHeight uint64) ([]types.Blob, error) {
+func (m *mockStore) GetBlobs(_ context.Context, ns types.Namespace, startHeight, endHeight uint64, _, _ int) ([]types.Blob, error) {
 	var result []types.Blob
 	for h := startHeight; h <= endHeight; h++ {
 		for _, b := range m.blobs[h] {
@@ -184,11 +183,11 @@ func TestGRPCBlobGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if resp.Height != 10 {
-		t.Errorf("Height = %d, want 10", resp.Height)
+	if resp.Blob.Height != 10 {
+		t.Errorf("Height = %d, want 10", resp.Blob.Height)
 	}
-	if string(resp.Data) != "d1" {
-		t.Errorf("Data = %q, want %q", resp.Data, "d1")
+	if string(resp.Blob.Data) != "d1" {
+		t.Errorf("Data = %q, want %q", resp.Blob.Data, "d1")
 	}
 }
 
@@ -232,15 +231,15 @@ func TestGRPCHeaderGetByHeight(t *testing.T) {
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	client := startTestHeaderServer(t, svc)
 
-	resp, err := client.GetByHeight(context.Background(), &pb.GetHeaderRequest{Height: 42})
+	resp, err := client.GetByHeight(context.Background(), &pb.GetByHeightRequest{Height: 42})
 	if err != nil {
 		t.Fatalf("GetByHeight: %v", err)
 	}
-	if resp.Height != 42 {
-		t.Errorf("Height = %d, want 42", resp.Height)
+	if resp.Header.Height != 42 {
+		t.Errorf("Height = %d, want 42", resp.Header.Height)
 	}
-	if string(resp.Hash) != "hash" {
-		t.Errorf("Hash = %q, want %q", resp.Hash, "hash")
+	if string(resp.Header.Hash) != "hash" {
+		t.Errorf("Hash = %q, want %q", resp.Header.Hash, "hash")
 	}
 }
 
@@ -257,12 +256,12 @@ func TestGRPCHeaderLocalHead(t *testing.T) {
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	client := startTestHeaderServer(t, svc)
 
-	resp, err := client.LocalHead(context.Background(), &emptypb.Empty{})
+	resp, err := client.LocalHead(context.Background(), &pb.LocalHeadRequest{})
 	if err != nil {
 		t.Fatalf("LocalHead: %v", err)
 	}
-	if resp.Height != 100 {
-		t.Errorf("Height = %d, want 100", resp.Height)
+	if resp.Header.Height != 100 {
+		t.Errorf("Height = %d, want 100", resp.Header.Height)
 	}
 }
 
@@ -279,12 +278,12 @@ func TestGRPCHeaderNetworkHead(t *testing.T) {
 	svc := api.NewService(newMockStore(), ft, nil, notifier, zerolog.Nop())
 	client := startTestHeaderServer(t, svc)
 
-	resp, err := client.NetworkHead(context.Background(), &emptypb.Empty{})
+	resp, err := client.NetworkHead(context.Background(), &pb.NetworkHeadRequest{})
 	if err != nil {
 		t.Fatalf("NetworkHead: %v", err)
 	}
-	if resp.Height != 200 {
-		t.Errorf("Height = %d, want 200", resp.Height)
+	if resp.Header.Height != 200 {
+		t.Errorf("Height = %d, want 200", resp.Header.Height)
 	}
 }
 
@@ -300,15 +299,21 @@ func TestGRPCBlobSubscribe(t *testing.T) {
 	defer cancel()
 
 	stream, err := client.Subscribe(ctx, &pb.SubscribeBlobsRequest{
-		Namespaces: [][]byte{ns[:]},
+		Namespace: ns[:],
 	})
 	if err != nil {
 		t.Fatalf("Subscribe: %v", err)
 	}
 
 	// Wait for server-side subscription to be established.
+	deadline := time.After(5 * time.Second)
 	for notifier.SubscriberCount() == 0 {
-		time.Sleep(10 * time.Millisecond)
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for subscriber registration")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 
 	// Publish an event.

@@ -207,7 +207,19 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	err = coord.Run(ctx)
 
 	// Graceful shutdown.
-	grpcSrv.GracefulStop()
+	stopped := make(chan struct{})
+	go func() {
+		grpcSrv.GracefulStop()
+		close(stopped)
+	}()
+
+	grpcTimeout := time.After(5 * time.Second)
+	select {
+	case <-stopped:
+	case <-grpcTimeout:
+		log.Warn().Msg("gRPC graceful stop timed out, forcing stop")
+		grpcSrv.Stop()
+	}
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()

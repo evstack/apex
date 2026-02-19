@@ -156,12 +156,18 @@ func (s *SQLiteStore) GetBlob(ctx context.Context, ns types.Namespace, height ui
 	return scanBlob(row)
 }
 
-func (s *SQLiteStore) GetBlobs(ctx context.Context, ns types.Namespace, startHeight, endHeight uint64) ([]types.Blob, error) {
-	rows, err := s.reader.QueryContext(ctx,
-		`SELECT height, namespace, commitment, data, share_version, signer, blob_index
+func (s *SQLiteStore) GetBlobs(ctx context.Context, ns types.Namespace, startHeight, endHeight uint64, limit, offset int) ([]types.Blob, error) {
+	query := `SELECT height, namespace, commitment, data, share_version, signer, blob_index
 		 FROM blobs WHERE namespace = ? AND height >= ? AND height <= ?
-		 ORDER BY height, blob_index`,
-		ns[:], startHeight, endHeight)
+		 ORDER BY height, blob_index`
+	args := []any{ns[:], startHeight, endHeight}
+
+	if limit > 0 {
+		query += ` LIMIT ? OFFSET ?`
+		args = append(args, limit, offset)
+	}
+
+	rows, err := s.reader.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query blobs: %w", err)
 	}
@@ -273,12 +279,7 @@ func (s *SQLiteStore) SetSyncState(ctx context.Context, status types.SyncStatus)
 }
 
 func (s *SQLiteStore) Close() error {
-	rErr := s.reader.Close()
-	wErr := s.writer.Close()
-	if rErr != nil {
-		return rErr
-	}
-	return wErr
+	return errors.Join(s.reader.Close(), s.writer.Close())
 }
 
 // scanBlob scans a single blob from a *sql.Row.

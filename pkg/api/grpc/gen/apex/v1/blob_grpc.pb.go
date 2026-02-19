@@ -31,11 +31,11 @@ const (
 // BlobService provides access to indexed blobs.
 type BlobServiceClient interface {
 	// Get returns a single blob matching the namespace and commitment at the given height.
-	Get(ctx context.Context, in *GetBlobRequest, opts ...grpc.CallOption) (*Blob, error)
+	Get(ctx context.Context, in *GetBlobRequest, opts ...grpc.CallOption) (*GetBlobResponse, error)
 	// GetAll returns all blobs for the given namespaces at the given height.
 	GetAll(ctx context.Context, in *GetAllBlobsRequest, opts ...grpc.CallOption) (*GetAllBlobsResponse, error)
-	// Subscribe streams blob events for the given namespaces.
-	Subscribe(ctx context.Context, in *SubscribeBlobsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[BlobEvent], error)
+	// Subscribe streams blob events for the given namespace.
+	Subscribe(ctx context.Context, in *SubscribeBlobsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SubscribeBlobsResponse], error)
 }
 
 type blobServiceClient struct {
@@ -46,9 +46,9 @@ func NewBlobServiceClient(cc grpc.ClientConnInterface) BlobServiceClient {
 	return &blobServiceClient{cc}
 }
 
-func (c *blobServiceClient) Get(ctx context.Context, in *GetBlobRequest, opts ...grpc.CallOption) (*Blob, error) {
+func (c *blobServiceClient) Get(ctx context.Context, in *GetBlobRequest, opts ...grpc.CallOption) (*GetBlobResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Blob)
+	out := new(GetBlobResponse)
 	err := c.cc.Invoke(ctx, BlobService_Get_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -66,13 +66,13 @@ func (c *blobServiceClient) GetAll(ctx context.Context, in *GetAllBlobsRequest, 
 	return out, nil
 }
 
-func (c *blobServiceClient) Subscribe(ctx context.Context, in *SubscribeBlobsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[BlobEvent], error) {
+func (c *blobServiceClient) Subscribe(ctx context.Context, in *SubscribeBlobsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SubscribeBlobsResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &BlobService_ServiceDesc.Streams[0], BlobService_Subscribe_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[SubscribeBlobsRequest, BlobEvent]{ClientStream: stream}
+	x := &grpc.GenericClientStream[SubscribeBlobsRequest, SubscribeBlobsResponse]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (c *blobServiceClient) Subscribe(ctx context.Context, in *SubscribeBlobsReq
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type BlobService_SubscribeClient = grpc.ServerStreamingClient[BlobEvent]
+type BlobService_SubscribeClient = grpc.ServerStreamingClient[SubscribeBlobsResponse]
 
 // BlobServiceServer is the server API for BlobService service.
 // All implementations must embed UnimplementedBlobServiceServer
@@ -92,11 +92,11 @@ type BlobService_SubscribeClient = grpc.ServerStreamingClient[BlobEvent]
 // BlobService provides access to indexed blobs.
 type BlobServiceServer interface {
 	// Get returns a single blob matching the namespace and commitment at the given height.
-	Get(context.Context, *GetBlobRequest) (*Blob, error)
+	Get(context.Context, *GetBlobRequest) (*GetBlobResponse, error)
 	// GetAll returns all blobs for the given namespaces at the given height.
 	GetAll(context.Context, *GetAllBlobsRequest) (*GetAllBlobsResponse, error)
-	// Subscribe streams blob events for the given namespaces.
-	Subscribe(*SubscribeBlobsRequest, grpc.ServerStreamingServer[BlobEvent]) error
+	// Subscribe streams blob events for the given namespace.
+	Subscribe(*SubscribeBlobsRequest, grpc.ServerStreamingServer[SubscribeBlobsResponse]) error
 	mustEmbedUnimplementedBlobServiceServer()
 }
 
@@ -107,13 +107,13 @@ type BlobServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedBlobServiceServer struct{}
 
-func (UnimplementedBlobServiceServer) Get(context.Context, *GetBlobRequest) (*Blob, error) {
+func (UnimplementedBlobServiceServer) Get(context.Context, *GetBlobRequest) (*GetBlobResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Get not implemented")
 }
 func (UnimplementedBlobServiceServer) GetAll(context.Context, *GetAllBlobsRequest) (*GetAllBlobsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetAll not implemented")
 }
-func (UnimplementedBlobServiceServer) Subscribe(*SubscribeBlobsRequest, grpc.ServerStreamingServer[BlobEvent]) error {
+func (UnimplementedBlobServiceServer) Subscribe(*SubscribeBlobsRequest, grpc.ServerStreamingServer[SubscribeBlobsResponse]) error {
 	return status.Error(codes.Unimplemented, "method Subscribe not implemented")
 }
 func (UnimplementedBlobServiceServer) mustEmbedUnimplementedBlobServiceServer() {}
@@ -178,11 +178,11 @@ func _BlobService_Subscribe_Handler(srv interface{}, stream grpc.ServerStream) e
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(BlobServiceServer).Subscribe(m, &grpc.GenericServerStream[SubscribeBlobsRequest, BlobEvent]{ServerStream: stream})
+	return srv.(BlobServiceServer).Subscribe(m, &grpc.GenericServerStream[SubscribeBlobsRequest, SubscribeBlobsResponse]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type BlobService_SubscribeServer = grpc.ServerStreamingServer[BlobEvent]
+type BlobService_SubscribeServer = grpc.ServerStreamingServer[SubscribeBlobsResponse]
 
 // BlobService_ServiceDesc is the grpc.ServiceDesc for BlobService service.
 // It's only intended for direct use with grpc.RegisterService,

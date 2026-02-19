@@ -47,7 +47,7 @@ func (m *mockStore) GetBlob(_ context.Context, ns types.Namespace, height uint64
 	return nil, store.ErrNotFound
 }
 
-func (m *mockStore) GetBlobs(_ context.Context, ns types.Namespace, startHeight, endHeight uint64) ([]types.Blob, error) {
+func (m *mockStore) GetBlobs(_ context.Context, ns types.Namespace, startHeight, endHeight uint64, _, _ int) ([]types.Blob, error) {
 	var result []types.Blob
 	for h := startHeight; h <= endHeight; h++ {
 		for _, b := range m.blobs[h] {

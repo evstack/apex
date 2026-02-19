@@ -9,7 +9,6 @@ package gen
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -22,27 +21,27 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type GetHeaderRequest struct {
+type GetByHeightRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Height        uint64                 `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *GetHeaderRequest) Reset() {
-	*x = GetHeaderRequest{}
+func (x *GetByHeightRequest) Reset() {
+	*x = GetByHeightRequest{}
 	mi := &file_apex_v1_header_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *GetHeaderRequest) String() string {
+func (x *GetByHeightRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GetHeaderRequest) ProtoMessage() {}
+func (*GetByHeightRequest) ProtoMessage() {}
 
-func (x *GetHeaderRequest) ProtoReflect() protoreflect.Message {
+func (x *GetByHeightRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_apex_v1_header_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -54,16 +53,220 @@ func (x *GetHeaderRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GetHeaderRequest.ProtoReflect.Descriptor instead.
-func (*GetHeaderRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use GetByHeightRequest.ProtoReflect.Descriptor instead.
+func (*GetByHeightRequest) Descriptor() ([]byte, []int) {
 	return file_apex_v1_header_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *GetHeaderRequest) GetHeight() uint64 {
+func (x *GetByHeightRequest) GetHeight() uint64 {
 	if x != nil {
 		return x.Height
 	}
 	return 0
+}
+
+type GetByHeightResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Header        *Header                `protobuf:"bytes,1,opt,name=header,proto3" json:"header,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetByHeightResponse) Reset() {
+	*x = GetByHeightResponse{}
+	mi := &file_apex_v1_header_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetByHeightResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetByHeightResponse) ProtoMessage() {}
+
+func (x *GetByHeightResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_apex_v1_header_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetByHeightResponse.ProtoReflect.Descriptor instead.
+func (*GetByHeightResponse) Descriptor() ([]byte, []int) {
+	return file_apex_v1_header_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *GetByHeightResponse) GetHeader() *Header {
+	if x != nil {
+		return x.Header
+	}
+	return nil
+}
+
+type LocalHeadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalHeadRequest) Reset() {
+	*x = LocalHeadRequest{}
+	mi := &file_apex_v1_header_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalHeadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalHeadRequest) ProtoMessage() {}
+
+func (x *LocalHeadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_apex_v1_header_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalHeadRequest.ProtoReflect.Descriptor instead.
+func (*LocalHeadRequest) Descriptor() ([]byte, []int) {
+	return file_apex_v1_header_proto_rawDescGZIP(), []int{2}
+}
+
+type LocalHeadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Header        *Header                `protobuf:"bytes,1,opt,name=header,proto3" json:"header,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LocalHeadResponse) Reset() {
+	*x = LocalHeadResponse{}
+	mi := &file_apex_v1_header_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LocalHeadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LocalHeadResponse) ProtoMessage() {}
+
+func (x *LocalHeadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_apex_v1_header_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LocalHeadResponse.ProtoReflect.Descriptor instead.
+func (*LocalHeadResponse) Descriptor() ([]byte, []int) {
+	return file_apex_v1_header_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *LocalHeadResponse) GetHeader() *Header {
+	if x != nil {
+		return x.Header
+	}
+	return nil
+}
+
+type NetworkHeadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NetworkHeadRequest) Reset() {
+	*x = NetworkHeadRequest{}
+	mi := &file_apex_v1_header_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NetworkHeadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NetworkHeadRequest) ProtoMessage() {}
+
+func (x *NetworkHeadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_apex_v1_header_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NetworkHeadRequest.ProtoReflect.Descriptor instead.
+func (*NetworkHeadRequest) Descriptor() ([]byte, []int) {
+	return file_apex_v1_header_proto_rawDescGZIP(), []int{4}
+}
+
+type NetworkHeadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Header        *Header                `protobuf:"bytes,1,opt,name=header,proto3" json:"header,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NetworkHeadResponse) Reset() {
+	*x = NetworkHeadResponse{}
+	mi := &file_apex_v1_header_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NetworkHeadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NetworkHeadResponse) ProtoMessage() {}
+
+func (x *NetworkHeadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_apex_v1_header_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NetworkHeadResponse.ProtoReflect.Descriptor instead.
+func (*NetworkHeadResponse) Descriptor() ([]byte, []int) {
+	return file_apex_v1_header_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *NetworkHeadResponse) GetHeader() *Header {
+	if x != nil {
+		return x.Header
+	}
+	return nil
 }
 
 type SubscribeHeadersRequest struct {
@@ -74,7 +277,7 @@ type SubscribeHeadersRequest struct {
 
 func (x *SubscribeHeadersRequest) Reset() {
 	*x = SubscribeHeadersRequest{}
-	mi := &file_apex_v1_header_proto_msgTypes[1]
+	mi := &file_apex_v1_header_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -86,7 +289,7 @@ func (x *SubscribeHeadersRequest) String() string {
 func (*SubscribeHeadersRequest) ProtoMessage() {}
 
 func (x *SubscribeHeadersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_apex_v1_header_proto_msgTypes[1]
+	mi := &file_apex_v1_header_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -99,22 +302,76 @@ func (x *SubscribeHeadersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeHeadersRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeHeadersRequest) Descriptor() ([]byte, []int) {
-	return file_apex_v1_header_proto_rawDescGZIP(), []int{1}
+	return file_apex_v1_header_proto_rawDescGZIP(), []int{6}
+}
+
+type SubscribeHeadersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Header        *Header                `protobuf:"bytes,1,opt,name=header,proto3" json:"header,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SubscribeHeadersResponse) Reset() {
+	*x = SubscribeHeadersResponse{}
+	mi := &file_apex_v1_header_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscribeHeadersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscribeHeadersResponse) ProtoMessage() {}
+
+func (x *SubscribeHeadersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_apex_v1_header_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscribeHeadersResponse.ProtoReflect.Descriptor instead.
+func (*SubscribeHeadersResponse) Descriptor() ([]byte, []int) {
+	return file_apex_v1_header_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SubscribeHeadersResponse) GetHeader() *Header {
+	if x != nil {
+		return x.Header
+	}
+	return nil
 }
 
 var File_apex_v1_header_proto protoreflect.FileDescriptor
 
 const file_apex_v1_header_proto_rawDesc = "" +
 	"\n" +
-	"\x14apex/v1/header.proto\x12\aapex.v1\x1a\x13apex/v1/types.proto\x1a\x1bgoogle/protobuf/empty.proto\"*\n" +
-	"\x10GetHeaderRequest\x12\x16\n" +
-	"\x06height\x18\x01 \x01(\x04R\x06height\"\x19\n" +
-	"\x17SubscribeHeadersRequest2\xfa\x01\n" +
-	"\rHeaderService\x129\n" +
-	"\vGetByHeight\x12\x19.apex.v1.GetHeaderRequest\x1a\x0f.apex.v1.Header\x124\n" +
-	"\tLocalHead\x12\x16.google.protobuf.Empty\x1a\x0f.apex.v1.Header\x126\n" +
-	"\vNetworkHead\x12\x16.google.protobuf.Empty\x1a\x0f.apex.v1.Header\x12@\n" +
-	"\tSubscribe\x12 .apex.v1.SubscribeHeadersRequest\x1a\x0f.apex.v1.Header0\x01B.Z,github.com/evstack/apex/pkg/api/grpc/gen;genb\x06proto3"
+	"\x14apex/v1/header.proto\x12\aapex.v1\x1a\x13apex/v1/types.proto\",\n" +
+	"\x12GetByHeightRequest\x12\x16\n" +
+	"\x06height\x18\x01 \x01(\x04R\x06height\">\n" +
+	"\x13GetByHeightResponse\x12'\n" +
+	"\x06header\x18\x01 \x01(\v2\x0f.apex.v1.HeaderR\x06header\"\x12\n" +
+	"\x10LocalHeadRequest\"<\n" +
+	"\x11LocalHeadResponse\x12'\n" +
+	"\x06header\x18\x01 \x01(\v2\x0f.apex.v1.HeaderR\x06header\"\x14\n" +
+	"\x12NetworkHeadRequest\">\n" +
+	"\x13NetworkHeadResponse\x12'\n" +
+	"\x06header\x18\x01 \x01(\v2\x0f.apex.v1.HeaderR\x06header\"\x19\n" +
+	"\x17SubscribeHeadersRequest\"C\n" +
+	"\x18SubscribeHeadersResponse\x12'\n" +
+	"\x06header\x18\x01 \x01(\v2\x0f.apex.v1.HeaderR\x06header2\xbb\x02\n" +
+	"\rHeaderService\x12H\n" +
+	"\vGetByHeight\x12\x1b.apex.v1.GetByHeightRequest\x1a\x1c.apex.v1.GetByHeightResponse\x12B\n" +
+	"\tLocalHead\x12\x19.apex.v1.LocalHeadRequest\x1a\x1a.apex.v1.LocalHeadResponse\x12H\n" +
+	"\vNetworkHead\x12\x1b.apex.v1.NetworkHeadRequest\x1a\x1c.apex.v1.NetworkHeadResponse\x12R\n" +
+	"\tSubscribe\x12 .apex.v1.SubscribeHeadersRequest\x1a!.apex.v1.SubscribeHeadersResponse0\x01B.Z,github.com/evstack/apex/pkg/api/grpc/gen;genb\x06proto3"
 
 var (
 	file_apex_v1_header_proto_rawDescOnce sync.Once
@@ -128,27 +385,36 @@ func file_apex_v1_header_proto_rawDescGZIP() []byte {
 	return file_apex_v1_header_proto_rawDescData
 }
 
-var file_apex_v1_header_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_apex_v1_header_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_apex_v1_header_proto_goTypes = []any{
-	(*GetHeaderRequest)(nil),        // 0: apex.v1.GetHeaderRequest
-	(*SubscribeHeadersRequest)(nil), // 1: apex.v1.SubscribeHeadersRequest
-	(*emptypb.Empty)(nil),           // 2: google.protobuf.Empty
-	(*Header)(nil),                  // 3: apex.v1.Header
+	(*GetByHeightRequest)(nil),       // 0: apex.v1.GetByHeightRequest
+	(*GetByHeightResponse)(nil),      // 1: apex.v1.GetByHeightResponse
+	(*LocalHeadRequest)(nil),         // 2: apex.v1.LocalHeadRequest
+	(*LocalHeadResponse)(nil),        // 3: apex.v1.LocalHeadResponse
+	(*NetworkHeadRequest)(nil),       // 4: apex.v1.NetworkHeadRequest
+	(*NetworkHeadResponse)(nil),      // 5: apex.v1.NetworkHeadResponse
+	(*SubscribeHeadersRequest)(nil),  // 6: apex.v1.SubscribeHeadersRequest
+	(*SubscribeHeadersResponse)(nil), // 7: apex.v1.SubscribeHeadersResponse
+	(*Header)(nil),                   // 8: apex.v1.Header
 }
 var file_apex_v1_header_proto_depIdxs = []int32{
-	0, // 0: apex.v1.HeaderService.GetByHeight:input_type -> apex.v1.GetHeaderRequest
-	2, // 1: apex.v1.HeaderService.LocalHead:input_type -> google.protobuf.Empty
-	2, // 2: apex.v1.HeaderService.NetworkHead:input_type -> google.protobuf.Empty
-	1, // 3: apex.v1.HeaderService.Subscribe:input_type -> apex.v1.SubscribeHeadersRequest
-	3, // 4: apex.v1.HeaderService.GetByHeight:output_type -> apex.v1.Header
-	3, // 5: apex.v1.HeaderService.LocalHead:output_type -> apex.v1.Header
-	3, // 6: apex.v1.HeaderService.NetworkHead:output_type -> apex.v1.Header
-	3, // 7: apex.v1.HeaderService.Subscribe:output_type -> apex.v1.Header
-	4, // [4:8] is the sub-list for method output_type
-	0, // [0:4] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	8, // 0: apex.v1.GetByHeightResponse.header:type_name -> apex.v1.Header
+	8, // 1: apex.v1.LocalHeadResponse.header:type_name -> apex.v1.Header
+	8, // 2: apex.v1.NetworkHeadResponse.header:type_name -> apex.v1.Header
+	8, // 3: apex.v1.SubscribeHeadersResponse.header:type_name -> apex.v1.Header
+	0, // 4: apex.v1.HeaderService.GetByHeight:input_type -> apex.v1.GetByHeightRequest
+	2, // 5: apex.v1.HeaderService.LocalHead:input_type -> apex.v1.LocalHeadRequest
+	4, // 6: apex.v1.HeaderService.NetworkHead:input_type -> apex.v1.NetworkHeadRequest
+	6, // 7: apex.v1.HeaderService.Subscribe:input_type -> apex.v1.SubscribeHeadersRequest
+	1, // 8: apex.v1.HeaderService.GetByHeight:output_type -> apex.v1.GetByHeightResponse
+	3, // 9: apex.v1.HeaderService.LocalHead:output_type -> apex.v1.LocalHeadResponse
+	5, // 10: apex.v1.HeaderService.NetworkHead:output_type -> apex.v1.NetworkHeadResponse
+	7, // 11: apex.v1.HeaderService.Subscribe:output_type -> apex.v1.SubscribeHeadersResponse
+	8, // [8:12] is the sub-list for method output_type
+	4, // [4:8] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_apex_v1_header_proto_init() }
@@ -163,7 +429,7 @@ func file_apex_v1_header_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_apex_v1_header_proto_rawDesc), len(file_apex_v1_header_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -42,7 +42,7 @@ func (m *mockStore) GetBlob(_ context.Context, ns types.Namespace, height uint64
 	return nil, store.ErrNotFound
 }
 
-func (m *mockStore) GetBlobs(_ context.Context, ns types.Namespace, startHeight, endHeight uint64) ([]types.Blob, error) {
+func (m *mockStore) GetBlobs(_ context.Context, ns types.Namespace, startHeight, endHeight uint64, _, _ int) ([]types.Blob, error) {
 	var result []types.Blob
 	for h := startHeight; h <= endHeight; h++ {
 		for _, b := range m.blobs[h] {
@@ -162,7 +162,7 @@ func TestServiceBlobGetAll(t *testing.T) {
 
 	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
 
-	raw, err := svc.BlobGetAll(context.Background(), 10, []types.Namespace{ns1, ns2})
+	raw, err := svc.BlobGetAll(context.Background(), 10, []types.Namespace{ns1, ns2}, 0, 0)
 	if err != nil {
 		t.Fatalf("BlobGetAll: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestServiceBlobGetAllEmpty(t *testing.T) {
 	st := newMockStore()
 	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
 
-	raw, err := svc.BlobGetAll(context.Background(), 10, []types.Namespace{testNamespace(1)})
+	raw, err := svc.BlobGetAll(context.Background(), 10, []types.Namespace{testNamespace(1)}, 0, 0)
 	if err != nil {
 		t.Fatalf("BlobGetAll: %v", err)
 	}

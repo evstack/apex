@@ -33,7 +33,7 @@ func (h *BlobHandler) GetAll(ctx context.Context, height uint64, namespaces [][]
 		}
 		nsList[i] = ns
 	}
-	return h.svc.BlobGetAll(ctx, height, nsList)
+	return h.svc.BlobGetAll(ctx, height, nsList, 0, 0)
 }
 
 // Subscribe returns a channel of blob events for the given namespace.
@@ -81,6 +81,16 @@ func (h *BlobHandler) GetProof(ctx context.Context, height uint64, namespace, co
 // Included forwards an inclusion check to the upstream Celestia node.
 func (h *BlobHandler) Included(ctx context.Context, height uint64, namespace []byte, proof json.RawMessage, commitment []byte) (bool, error) {
 	return h.svc.BlobIncluded(ctx, height, namespace, proof, commitment)
+}
+
+// GetCommitmentProof is not supported by the indexer.
+func (h *BlobHandler) GetCommitmentProof(_ context.Context, _ uint64, _ []byte, _ []byte) (json.RawMessage, error) {
+	return nil, errNotSupported
+}
+
+// Submit is not supported — apex is read-only.
+func (h *BlobHandler) Submit(_ context.Context, _ json.RawMessage, _ json.RawMessage) (json.RawMessage, error) {
+	return nil, errReadOnly
 }
 
 func bytesToNamespace(b []byte) (types.Namespace, error) {

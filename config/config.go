@@ -25,8 +25,7 @@ type DataSourceConfig struct {
 
 // StorageConfig configures the SQLite database.
 type StorageConfig struct {
-	DBPath       string `yaml:"db_path"`
-	ReadPoolSize int    `yaml:"read_pool_size"`
+	DBPath string `yaml:"db_path"`
 }
 
 // RPCConfig configures the API servers.
@@ -60,8 +59,7 @@ func DefaultConfig() Config {
 			CelestiaNodeURL: "http://localhost:26658",
 		},
 		Storage: StorageConfig{
-			DBPath:       "apex.db",
-			ReadPoolSize: 4,
+			DBPath: "apex.db",
 		},
 		RPC: RPCConfig{
 			ListenAddr:     ":8080",

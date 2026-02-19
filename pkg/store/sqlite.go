@@ -6,6 +6,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/evstack/apex/pkg/types"
@@ -25,13 +26,17 @@ type SQLiteStore struct {
 	reader *sql.DB
 }
 
+// maxReadConns is the upper bound for the read connection pool.
+// Beyond ~8 readers, SQLite WAL contention outweighs parallelism gains.
+const maxReadConns = 8
+
 // Open creates or opens a SQLite database at the given path.
-// readPoolSize controls the number of concurrent read connections.
+// The read pool is sized to min(NumCPU, 8).
 // The database is configured with WAL journal mode and a 5-second busy timeout.
-func Open(path string, readPoolSize ...int) (*SQLiteStore, error) {
-	poolSize := 4
-	if len(readPoolSize) > 0 && readPoolSize[0] > 0 {
-		poolSize = readPoolSize[0]
+func Open(path string) (*SQLiteStore, error) {
+	poolSize := runtime.NumCPU()
+	if poolSize > maxReadConns {
+		poolSize = maxReadConns
 	}
 
 	writer, err := sql.Open("sqlite", path)

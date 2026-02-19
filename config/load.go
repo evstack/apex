@@ -41,8 +41,6 @@ data_source:
 storage:
   # Path to the SQLite database file
   db_path: "apex.db"
-  # Number of concurrent read connections (for API reads)
-  read_pool_size: 4
 
 rpc:
   # Address for the JSON-RPC API server (HTTP/WebSocket)
@@ -108,9 +106,6 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Storage.DBPath == "" {
 		return fmt.Errorf("storage.db_path is required")
-	}
-	if cfg.Storage.ReadPoolSize <= 0 {
-		return fmt.Errorf("storage.read_pool_size must be positive")
 	}
 	if cfg.RPC.GRPCListenAddr == "" {
 		return fmt.Errorf("rpc.grpc_listen_addr is required")

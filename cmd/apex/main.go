@@ -132,7 +132,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	}
 
 	// Open store.
-	db, err := store.Open(cfg.Storage.DBPath, cfg.Storage.ReadPoolSize)
+	db, err := store.Open(cfg.Storage.DBPath)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}

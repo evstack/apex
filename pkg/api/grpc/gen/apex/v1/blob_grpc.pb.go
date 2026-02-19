@@ -19,9 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	BlobService_Get_FullMethodName       = "/apex.v1.BlobService/Get"
-	BlobService_GetAll_FullMethodName    = "/apex.v1.BlobService/GetAll"
-	BlobService_Subscribe_FullMethodName = "/apex.v1.BlobService/Subscribe"
+	BlobService_Get_FullMethodName             = "/apex.v1.BlobService/Get"
+	BlobService_GetAll_FullMethodName          = "/apex.v1.BlobService/GetAll"
+	BlobService_GetByCommitment_FullMethodName = "/apex.v1.BlobService/GetByCommitment"
+	BlobService_Subscribe_FullMethodName       = "/apex.v1.BlobService/Subscribe"
 )
 
 // BlobServiceClient is the client API for BlobService service.
@@ -34,6 +35,8 @@ type BlobServiceClient interface {
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
 	// GetAll returns all blobs for the given namespaces at the given height.
 	GetAll(ctx context.Context, in *GetAllRequest, opts ...grpc.CallOption) (*GetAllResponse, error)
+	// GetByCommitment returns a blob matching the given commitment.
+	GetByCommitment(ctx context.Context, in *GetByCommitmentRequest, opts ...grpc.CallOption) (*GetByCommitmentResponse, error)
 	// Subscribe streams blob events for the given namespace.
 	Subscribe(ctx context.Context, in *BlobServiceSubscribeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[BlobServiceSubscribeResponse], error)
 }
@@ -60,6 +63,16 @@ func (c *blobServiceClient) GetAll(ctx context.Context, in *GetAllRequest, opts 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetAllResponse)
 	err := c.cc.Invoke(ctx, BlobService_GetAll_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *blobServiceClient) GetByCommitment(ctx context.Context, in *GetByCommitmentRequest, opts ...grpc.CallOption) (*GetByCommitmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetByCommitmentResponse)
+	err := c.cc.Invoke(ctx, BlobService_GetByCommitment_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +108,8 @@ type BlobServiceServer interface {
 	Get(context.Context, *GetRequest) (*GetResponse, error)
 	// GetAll returns all blobs for the given namespaces at the given height.
 	GetAll(context.Context, *GetAllRequest) (*GetAllResponse, error)
+	// GetByCommitment returns a blob matching the given commitment.
+	GetByCommitment(context.Context, *GetByCommitmentRequest) (*GetByCommitmentResponse, error)
 	// Subscribe streams blob events for the given namespace.
 	Subscribe(*BlobServiceSubscribeRequest, grpc.ServerStreamingServer[BlobServiceSubscribeResponse]) error
 	mustEmbedUnimplementedBlobServiceServer()
@@ -112,6 +127,9 @@ func (UnimplementedBlobServiceServer) Get(context.Context, *GetRequest) (*GetRes
 }
 func (UnimplementedBlobServiceServer) GetAll(context.Context, *GetAllRequest) (*GetAllResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetAll not implemented")
+}
+func (UnimplementedBlobServiceServer) GetByCommitment(context.Context, *GetByCommitmentRequest) (*GetByCommitmentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetByCommitment not implemented")
 }
 func (UnimplementedBlobServiceServer) Subscribe(*BlobServiceSubscribeRequest, grpc.ServerStreamingServer[BlobServiceSubscribeResponse]) error {
 	return status.Error(codes.Unimplemented, "method Subscribe not implemented")
@@ -173,6 +191,24 @@ func _BlobService_GetAll_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BlobService_GetByCommitment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetByCommitmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BlobServiceServer).GetByCommitment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BlobService_GetByCommitment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BlobServiceServer).GetByCommitment(ctx, req.(*GetByCommitmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _BlobService_Subscribe_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(BlobServiceSubscribeRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -198,6 +234,10 @@ var BlobService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetAll",
 			Handler:    _BlobService_GetAll_Handler,
+		},
+		{
+			MethodName: "GetByCommitment",
+			Handler:    _BlobService_GetByCommitment_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

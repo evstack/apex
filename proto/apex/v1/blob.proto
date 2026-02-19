@@ -14,6 +14,9 @@ service BlobService {
   // GetAll returns all blobs for the given namespaces at the given height.
   rpc GetAll(GetAllRequest) returns (GetAllResponse);
 
+  // GetByCommitment returns a blob matching the given commitment.
+  rpc GetByCommitment(GetByCommitmentRequest) returns (GetByCommitmentResponse);
+
   // Subscribe streams blob events for the given namespace.
   rpc Subscribe(BlobServiceSubscribeRequest) returns (stream BlobServiceSubscribeResponse);
 }
@@ -39,6 +42,14 @@ message GetAllRequest {
 
 message GetAllResponse {
   repeated Blob blobs = 1;
+}
+
+message GetByCommitmentRequest {
+  bytes commitment = 1;
+}
+
+message GetByCommitmentResponse {
+  Blob blob = 1;
 }
 
 message BlobServiceSubscribeRequest {

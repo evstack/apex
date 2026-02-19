@@ -59,6 +59,17 @@ func (m *mockStore) GetBlobs(_ context.Context, ns types.Namespace, startHeight,
 	return result, nil
 }
 
+func (m *mockStore) GetBlobByCommitment(_ context.Context, commitment []byte) (*types.Blob, error) {
+	for _, blobs := range m.blobs {
+		for i := range blobs {
+			if bytes.Equal(blobs[i].Commitment, commitment) {
+				return &blobs[i], nil
+			}
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
 func (m *mockStore) PutHeader(_ context.Context, h *types.Header) error {
 	m.headers[h.Height] = h
 	return nil
@@ -263,6 +274,40 @@ func TestJSONRPCBlobGetAll(t *testing.T) {
 	if len(blobs) != 1 {
 		t.Errorf("got %d blobs, want 1", len(blobs))
 	}
+}
+
+func TestJSONRPCBlobGetByCommitment(t *testing.T) {
+	st := newMockStore()
+	ns := testNamespace(1)
+	st.blobs[10] = []types.Blob{
+		{Height: 10, Namespace: ns, Data: []byte("d1"), Commitment: []byte("c1"), Index: 0},
+	}
+
+	notifier := api.NewNotifier(16, zerolog.Nop())
+	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
+	srv := NewServer(svc, zerolog.Nop())
+
+	t.Run("found", func(t *testing.T) {
+		resp := doRPC(t, srv, "blob.GetByCommitment", []byte("c1"))
+		if resp.Error != nil {
+			t.Fatalf("RPC error: %s", resp.Error.Message)
+		}
+
+		var blob map[string]json.RawMessage
+		if err := json.Unmarshal(resp.Result, &blob); err != nil {
+			t.Fatalf("unmarshal blob: %v", err)
+		}
+		if _, ok := blob["commitment"]; !ok {
+			t.Error("blob JSON missing 'commitment' field")
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		resp := doRPC(t, srv, "blob.GetByCommitment", []byte("missing"))
+		if resp.Error == nil {
+			t.Fatal("expected error for missing commitment")
+		}
+	})
 }
 
 func TestJSONRPCStubMethods(t *testing.T) {

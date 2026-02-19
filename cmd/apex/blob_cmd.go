@@ -16,6 +16,7 @@ func blobCmd() *cobra.Command {
 		Short: "Query blobs from the indexer",
 	}
 	cmd.AddCommand(blobGetCmd())
+	cmd.AddCommand(blobGetByCommitmentCmd())
 	cmd.AddCommand(blobListCmd())
 	return cmd
 }
@@ -45,6 +46,30 @@ func blobGetCmd() *cobra.Command {
 
 			client := newRPCClient(addr)
 			result, err := client.call(cmd.Context(), "blob.Get", height, ns, commitment)
+			if err != nil {
+				return err
+			}
+
+			return printJSON(cmd, result)
+		},
+	}
+}
+
+func blobGetByCommitmentCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "get-by-commitment <commitment-hex>",
+		Short: "Get a blob by commitment alone (no height required)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			addr, _ := cmd.Flags().GetString("rpc-addr")
+
+			commitment, err := hex.DecodeString(args[0])
+			if err != nil {
+				return fmt.Errorf("invalid commitment hex: %w", err)
+			}
+
+			client := newRPCClient(addr)
+			result, err := client.call(cmd.Context(), "blob.GetByCommitment", commitment)
 			if err != nil {
 				return err
 			}

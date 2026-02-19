@@ -106,11 +106,16 @@ func startCmd() *cobra.Command {
 
 			setupLogger(cfg.Log)
 
-			log.Info().
+			startLog := log.Info().
 				Str("version", version).
-				Str("node_url", cfg.DataSource.CelestiaNodeURL).
-				Int("namespaces", len(cfg.DataSource.Namespaces)).
-				Msg("starting apex indexer")
+				Str("datasource_type", cfg.DataSource.Type).
+				Int("namespaces", len(cfg.DataSource.Namespaces))
+			if cfg.DataSource.Type == "app" {
+				startLog = startLog.Str("app_url", cfg.DataSource.CelestiaAppURL)
+			} else {
+				startLog = startLog.Str("node_url", cfg.DataSource.CelestiaNodeURL)
+			}
+			startLog.Msg("starting apex indexer")
 
 			return runIndexer(cmd.Context(), cfg)
 		},
@@ -173,20 +178,38 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		}
 	}
 
-	// Connect to Celestia node.
-	fetcher, err := fetch.NewCelestiaNodeFetcher(ctx, cfg.DataSource.CelestiaNodeURL, cfg.DataSource.AuthToken, log.Logger)
-	if err != nil {
-		return fmt.Errorf("connect to celestia node: %w", err)
+	// Connect to data source.
+	var (
+		dataFetcher fetch.DataFetcher
+		proofFwd    fetch.ProofForwarder
+	)
+	switch cfg.DataSource.Type {
+	case "app":
+		appFetcher, err := fetch.NewCelestiaAppFetcher(cfg.DataSource.CelestiaAppURL, cfg.DataSource.AuthToken, log.Logger)
+		if err != nil {
+			return fmt.Errorf("create celestia-app fetcher: %w", err)
+		}
+		dataFetcher = appFetcher
+		// celestia-app does not serve blob proofs; proofFwd stays nil.
+	case "node", "":
+		nodeFetcher, err := fetch.NewCelestiaNodeFetcher(ctx, cfg.DataSource.CelestiaNodeURL, cfg.DataSource.AuthToken, log.Logger)
+		if err != nil {
+			return fmt.Errorf("connect to celestia node: %w", err)
+		}
+		dataFetcher = nodeFetcher
+		proofFwd = nodeFetcher
+	default:
+		return fmt.Errorf("unsupported data source type: %q", cfg.DataSource.Type)
 	}
-	defer fetcher.Close() //nolint:errcheck
+	defer dataFetcher.Close() //nolint:errcheck
 
 	// Set up API layer.
 	notifier := api.NewNotifier(cfg.Subscription.BufferSize, log.Logger)
 	notifier.SetMetrics(rec)
-	svc := api.NewService(db, fetcher, fetcher, notifier, log.Logger)
+	svc := api.NewService(db, dataFetcher, proofFwd, notifier, log.Logger)
 
 	// Build and run the sync coordinator with observer hook.
-	coord := syncer.New(db, fetcher,
+	coord := syncer.New(db, dataFetcher,
 		syncer.WithStartHeight(cfg.Sync.StartHeight),
 		syncer.WithBatchSize(cfg.Sync.BatchSize),
 		syncer.WithConcurrency(cfg.Sync.Concurrency),

@@ -17,6 +17,8 @@ func TestPromRecorderRegisters(t *testing.T) {
 	r.IncBlobsProcessed(10)
 	r.IncHeadersProcessed(5)
 	r.ObserveBatchDuration(500 * time.Millisecond)
+	r.ObserveBackfillStageDuration("fetch_header", 3*time.Millisecond)
+	r.IncBackfillStageErrors("store_header")
 	r.IncAPIRequest("BlobGet", "ok")
 	r.ObserveAPIRequestDuration("BlobGet", 10*time.Millisecond)
 	r.ObserveStoreQueryDuration("GetBlobs", 2*time.Millisecond)
@@ -32,16 +34,28 @@ func TestPromRecorderRegisters(t *testing.T) {
 		t.Fatal("expected at least one metric family")
 	}
 
-	// Verify apex_info is present.
-	found := false
+	// Verify new and existing key metrics are present.
+	foundInfo := false
+	foundBackfillDur := false
+	foundBackfillErr := false
 	for _, fam := range families {
-		if fam.GetName() == "apex_info" {
-			found = true
-			break
+		switch fam.GetName() {
+		case "apex_info":
+			foundInfo = true
+		case "apex_backfill_stage_duration_seconds":
+			foundBackfillDur = true
+		case "apex_backfill_stage_errors_total":
+			foundBackfillErr = true
 		}
 	}
-	if !found {
+	if !foundInfo {
 		t.Error("apex_info metric not found")
+	}
+	if !foundBackfillDur {
+		t.Error("apex_backfill_stage_duration_seconds metric not found")
+	}
+	if !foundBackfillErr {
+		t.Error("apex_backfill_stage_errors_total metric not found")
 	}
 }
 
@@ -53,6 +67,8 @@ func TestNopRecorderDoesNotPanic(t *testing.T) {
 	r.IncBlobsProcessed(10)
 	r.IncHeadersProcessed(5)
 	r.ObserveBatchDuration(500 * time.Millisecond)
+	r.ObserveBackfillStageDuration("fetch_header", 3*time.Millisecond)
+	r.IncBackfillStageErrors("store_header")
 	r.IncAPIRequest("BlobGet", "ok")
 	r.ObserveAPIRequestDuration("BlobGet", 10*time.Millisecond)
 	r.ObserveStoreQueryDuration("GetBlobs", 2*time.Millisecond)

@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -12,9 +13,15 @@ const NamespaceSize = 29
 // Namespace is a 29-byte Celestia namespace identifier.
 type Namespace [NamespaceSize]byte
 
+// StripHexPrefix removes an optional "0x" or "0X" prefix from a hex string.
+func StripHexPrefix(s string) string {
+	return strings.TrimPrefix(strings.TrimPrefix(s, "0x"), "0X")
+}
+
 // NamespaceFromHex parses a hex-encoded namespace string.
+// It accepts an optional "0x" or "0X" prefix.
 func NamespaceFromHex(s string) (Namespace, error) {
-	b, err := hex.DecodeString(s)
+	b, err := hex.DecodeString(StripHexPrefix(s))
 	if err != nil {
 		return Namespace{}, fmt.Errorf("invalid hex: %w", err)
 	}

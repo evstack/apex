@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/evstack/apex/pkg/types"
 	"github.com/spf13/cobra"
 )
 
@@ -34,12 +35,12 @@ func blobGetCmd() *cobra.Command {
 				return fmt.Errorf("invalid height: %w", err)
 			}
 
-			ns, err := hex.DecodeString(args[1])
+			ns, err := hex.DecodeString(types.StripHexPrefix(args[1]))
 			if err != nil {
 				return fmt.Errorf("invalid namespace hex: %w", err)
 			}
 
-			commitment, err := hex.DecodeString(args[2])
+			commitment, err := hex.DecodeString(types.StripHexPrefix(args[2]))
 			if err != nil {
 				return fmt.Errorf("invalid commitment hex: %w", err)
 			}
@@ -63,7 +64,7 @@ func blobGetByCommitmentCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			addr, _ := cmd.Flags().GetString("rpc-addr")
 
-			commitment, err := hex.DecodeString(args[0])
+			commitment, err := hex.DecodeString(types.StripHexPrefix(args[0]))
 			if err != nil {
 				return fmt.Errorf("invalid commitment hex: %w", err)
 			}
@@ -95,7 +96,7 @@ func blobListCmd() *cobra.Command {
 
 			var namespaces [][]byte
 			if nsHex != "" {
-				ns, err := hex.DecodeString(nsHex)
+				ns, err := hex.DecodeString(types.StripHexPrefix(nsHex))
 				if err != nil {
 					return fmt.Errorf("invalid namespace hex: %w", err)
 				}

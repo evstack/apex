@@ -22,6 +22,7 @@ import (
 	jsonrpcapi "github.com/evstack/apex/pkg/api/jsonrpc"
 	"github.com/evstack/apex/pkg/fetch"
 	"github.com/evstack/apex/pkg/metrics"
+	"github.com/evstack/apex/pkg/profile"
 	"github.com/evstack/apex/pkg/store"
 	syncer "github.com/evstack/apex/pkg/sync"
 	"github.com/evstack/apex/pkg/types"
@@ -151,6 +152,49 @@ func setupMetrics(cfg *config.Config) (metrics.Recorder, *metrics.Server) {
 	return rec, srv
 }
 
+func setupProfiling(cfg *config.Config) *profile.Server {
+	if !cfg.Profiling.Enabled {
+		return nil
+	}
+	srv := profile.NewServer(cfg.Profiling.ListenAddr, log.Logger)
+	go func() {
+		if err := srv.Start(); err != nil {
+			log.Error().Err(err).Msg("profiling server error")
+		}
+	}()
+	return srv
+}
+
+func openDataSource(ctx context.Context, cfg *config.Config) (fetch.DataFetcher, fetch.ProofForwarder, error) {
+	switch cfg.DataSource.Type {
+	case "app":
+		appFetcher, err := fetch.NewCelestiaAppFetcher(cfg.DataSource.CelestiaAppURL, cfg.DataSource.AuthToken, log.Logger)
+		if err != nil {
+			return nil, nil, fmt.Errorf("create celestia-app fetcher: %w", err)
+		}
+		return appFetcher, nil, nil
+	case "node", "":
+		nodeFetcher, err := fetch.NewCelestiaNodeFetcher(ctx, cfg.DataSource.CelestiaNodeURL, cfg.DataSource.AuthToken, log.Logger)
+		if err != nil {
+			return nil, nil, fmt.Errorf("connect to celestia node: %w", err)
+		}
+		return nodeFetcher, nodeFetcher, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported data source type: %q", cfg.DataSource.Type)
+	}
+}
+
+func openStore(ctx context.Context, cfg *config.Config) (store.Store, error) {
+	switch cfg.Storage.Type {
+	case "s3":
+		return store.NewS3Store(ctx, cfg.Storage.S3)
+	case "sqlite", "":
+		return store.Open(cfg.Storage.DBPath)
+	default:
+		return nil, fmt.Errorf("unsupported storage type: %q", cfg.Storage.Type)
+	}
+}
+
 func runIndexer(ctx context.Context, cfg *config.Config) error {
 	// Parse namespaces from config.
 	namespaces, err := cfg.ParsedNamespaces()
@@ -159,14 +203,22 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	}
 
 	rec, metricsSrv := setupMetrics(cfg)
+	profileSrv := setupProfiling(cfg)
 
 	// Open store.
-	db, err := store.Open(cfg.Storage.DBPath)
+	db, err := openStore(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}
 	defer db.Close() //nolint:errcheck
-	db.SetMetrics(rec)
+
+	// Wire metrics into the store.
+	switch s := db.(type) {
+	case *store.SQLiteStore:
+		s.SetMetrics(rec)
+	case *store.S3Store:
+		s.SetMetrics(rec)
+	}
 
 	// Persist configured namespaces.
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
@@ -179,27 +231,9 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	}
 
 	// Connect to data source.
-	var (
-		dataFetcher fetch.DataFetcher
-		proofFwd    fetch.ProofForwarder
-	)
-	switch cfg.DataSource.Type {
-	case "app":
-		appFetcher, err := fetch.NewCelestiaAppFetcher(cfg.DataSource.CelestiaAppURL, cfg.DataSource.AuthToken, log.Logger)
-		if err != nil {
-			return fmt.Errorf("create celestia-app fetcher: %w", err)
-		}
-		dataFetcher = appFetcher
-		// celestia-app does not serve blob proofs; proofFwd stays nil.
-	case "node", "":
-		nodeFetcher, err := fetch.NewCelestiaNodeFetcher(ctx, cfg.DataSource.CelestiaNodeURL, cfg.DataSource.AuthToken, log.Logger)
-		if err != nil {
-			return fmt.Errorf("connect to celestia node: %w", err)
-		}
-		dataFetcher = nodeFetcher
-		proofFwd = nodeFetcher
-	default:
-		return fmt.Errorf("unsupported data source type: %q", cfg.DataSource.Type)
+	dataFetcher, proofFwd, err := openDataSource(ctx, cfg)
+	if err != nil {
+		return err
 	}
 	defer dataFetcher.Close() //nolint:errcheck
 
@@ -263,7 +297,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 
 	err = coord.Run(ctx)
 
-	gracefulShutdown(httpSrv, grpcSrv, metricsSrv)
+	gracefulShutdown(httpSrv, grpcSrv, metricsSrv, profileSrv)
 
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return fmt.Errorf("coordinator: %w", err)
@@ -273,7 +307,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *metrics.Server) {
+func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *metrics.Server, profileSrv *profile.Server) {
 	stopped := make(chan struct{})
 	go func() {
 		grpcSrv.GracefulStop()
@@ -297,6 +331,11 @@ func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *me
 	if metricsSrv != nil {
 		if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
 			log.Error().Err(err).Msg("metrics server shutdown error")
+		}
+	}
+	if profileSrv != nil {
+		if err := profileSrv.Shutdown(shutdownCtx); err != nil {
+			log.Error().Err(err).Msg("profiling server shutdown error")
 		}
 	}
 }

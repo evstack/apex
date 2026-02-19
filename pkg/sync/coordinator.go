@@ -165,6 +165,7 @@ func (c *Coordinator) Run(ctx context.Context) error {
 				batchSize:   c.batchSize,
 				concurrency: c.concurrency,
 				observer:    wrappedObserver,
+				metrics:     c.metrics,
 				log:         c.log.With().Str("component", "backfiller").Logger(),
 			}
 			if err := bf.Run(ctx, fromHeight, networkHeight); err != nil {

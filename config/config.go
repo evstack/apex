@@ -14,6 +14,7 @@ type Config struct {
 	Sync         SyncConfig         `yaml:"sync"`
 	Subscription SubscriptionConfig `yaml:"subscription"`
 	Metrics      MetricsConfig      `yaml:"metrics"`
+	Profiling    ProfilingConfig    `yaml:"profiling"`
 	Log          LogConfig          `yaml:"log"`
 }
 
@@ -28,9 +29,24 @@ type DataSourceConfig struct {
 	Namespaces      []string `yaml:"namespaces"`
 }
 
-// StorageConfig configures the SQLite database.
+// StorageConfig configures the persistence backend.
+// Type selects the backend: "sqlite" (default) uses a local SQLite file,
+// "s3" uses an S3-compatible object store.
 type StorageConfig struct {
-	DBPath string `yaml:"db_path"`
+	Type   string    `yaml:"type"`    // "sqlite" (default) or "s3"
+	DBPath string    `yaml:"db_path"` // SQLite path (used when type=sqlite)
+	S3     *S3Config `yaml:"s3"`      // S3 settings (used when type=s3)
+}
+
+// S3Config configures an S3-compatible object store backend.
+// Credentials are resolved via standard AWS SDK mechanisms
+// (env vars, IAM role, shared credentials file).
+type S3Config struct {
+	Bucket    string `yaml:"bucket"`
+	Prefix    string `yaml:"prefix"`
+	Region    string `yaml:"region"`
+	Endpoint  string `yaml:"endpoint"`   // custom endpoint for MinIO, R2, Spaces
+	ChunkSize int    `yaml:"chunk_size"` // heights per S3 object, default 64
 }
 
 // RPCConfig configures the API servers.
@@ -57,6 +73,12 @@ type MetricsConfig struct {
 	ListenAddr string `yaml:"listen_addr"`
 }
 
+// ProfilingConfig configures pprof profiling endpoints.
+type ProfilingConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	ListenAddr string `yaml:"listen_addr"`
+}
+
 // LogConfig configures logging.
 type LogConfig struct {
 	Level  string `yaml:"level"`
@@ -71,6 +93,7 @@ func DefaultConfig() Config {
 			CelestiaNodeURL: "http://localhost:26658",
 		},
 		Storage: StorageConfig{
+			Type:   "sqlite",
 			DBPath: "apex.db",
 		},
 		RPC: RPCConfig{
@@ -87,6 +110,10 @@ func DefaultConfig() Config {
 		Metrics: MetricsConfig{
 			Enabled:    true,
 			ListenAddr: ":9091",
+		},
+		Profiling: ProfilingConfig{
+			Enabled:    false,
+			ListenAddr: "127.0.0.1:6061",
 		},
 		Log: LogConfig{
 			Level:  "info",

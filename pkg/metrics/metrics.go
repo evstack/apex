@@ -20,6 +20,8 @@ type Recorder interface {
 	IncBlobsProcessed(n int)
 	IncHeadersProcessed(n int)
 	ObserveBatchDuration(d time.Duration)
+	ObserveBackfillStageDuration(stage string, d time.Duration)
+	IncBackfillStageErrors(stage string)
 
 	// API metrics
 	IncAPIRequest(method, status string)
@@ -39,17 +41,19 @@ type nopRecorder struct{}
 // Nop returns a Recorder that discards all metrics.
 func Nop() Recorder { return nopRecorder{} }
 
-func (nopRecorder) SetSyncState(string)                             {}
-func (nopRecorder) SetLatestHeight(uint64)                          {}
-func (nopRecorder) SetNetworkHeight(uint64)                         {}
-func (nopRecorder) IncBlobsProcessed(int)                           {}
-func (nopRecorder) IncHeadersProcessed(int)                         {}
-func (nopRecorder) ObserveBatchDuration(time.Duration)              {}
-func (nopRecorder) IncAPIRequest(string, string)                    {}
-func (nopRecorder) ObserveAPIRequestDuration(string, time.Duration) {}
-func (nopRecorder) ObserveStoreQueryDuration(string, time.Duration) {}
-func (nopRecorder) SetActiveSubscriptions(int)                      {}
-func (nopRecorder) IncEventsDropped()                               {}
+func (nopRecorder) SetSyncState(string)                                {}
+func (nopRecorder) SetLatestHeight(uint64)                             {}
+func (nopRecorder) SetNetworkHeight(uint64)                            {}
+func (nopRecorder) IncBlobsProcessed(int)                              {}
+func (nopRecorder) IncHeadersProcessed(int)                            {}
+func (nopRecorder) ObserveBatchDuration(time.Duration)                 {}
+func (nopRecorder) ObserveBackfillStageDuration(string, time.Duration) {}
+func (nopRecorder) IncBackfillStageErrors(string)                      {}
+func (nopRecorder) IncAPIRequest(string, string)                       {}
+func (nopRecorder) ObserveAPIRequestDuration(string, time.Duration)    {}
+func (nopRecorder) ObserveStoreQueryDuration(string, time.Duration)    {}
+func (nopRecorder) SetActiveSubscriptions(int)                         {}
+func (nopRecorder) IncEventsDropped()                                  {}
 
 // PromRecorder implements Recorder using Prometheus metrics.
 type PromRecorder struct {
@@ -60,6 +64,8 @@ type PromRecorder struct {
 	blobsProcessed   prometheus.Counter
 	headersProcessed prometheus.Counter
 	batchDuration    prometheus.Histogram
+	backfillStageDur *prometheus.HistogramVec
+	backfillStageErr *prometheus.CounterVec
 	apiRequests      *prometheus.CounterVec
 	apiDuration      *prometheus.HistogramVec
 	storeQueryDur    *prometheus.HistogramVec
@@ -116,6 +122,17 @@ func NewPromRecorder(reg prometheus.Registerer, version string) *PromRecorder {
 			Help:    "Duration of backfill batch processing.",
 			Buckets: prometheus.DefBuckets,
 		}),
+
+		backfillStageDur: factory.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "apex_backfill_stage_duration_seconds",
+			Help:    "Per-stage duration during backfill height processing.",
+			Buckets: prometheus.DefBuckets,
+		}, []string{"stage"}),
+
+		backfillStageErr: factory.NewCounterVec(prometheus.CounterOpts{
+			Name: "apex_backfill_stage_errors_total",
+			Help: "Total backfill stage errors by stage.",
+		}, []string{"stage"}),
 
 		apiRequests: factory.NewCounterVec(prometheus.CounterOpts{
 			Name: "apex_api_requests_total",
@@ -199,6 +216,14 @@ func (r *PromRecorder) IncHeadersProcessed(n int) {
 
 func (r *PromRecorder) ObserveBatchDuration(d time.Duration) {
 	r.batchDuration.Observe(d.Seconds())
+}
+
+func (r *PromRecorder) ObserveBackfillStageDuration(stage string, d time.Duration) {
+	r.backfillStageDur.WithLabelValues(stage).Observe(d.Seconds())
+}
+
+func (r *PromRecorder) IncBackfillStageErrors(stage string) {
+	r.backfillStageErr.WithLabelValues(stage).Inc()
 }
 
 func (r *PromRecorder) IncAPIRequest(method, status string) {

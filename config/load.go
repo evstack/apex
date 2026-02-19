@@ -45,8 +45,19 @@ data_source:
   namespaces: []
 
 storage:
-  # Path to the SQLite database file
+  # Storage backend: "sqlite" (default) or "s3"
+  type: "sqlite"
+
+  # Path to the SQLite database file (used when type: "sqlite")
   db_path: "apex.db"
+
+  # S3-compatible object store settings (used when type: "s3")
+  # s3:
+  #   bucket: "my-apex-bucket"
+  #   prefix: "indexer"
+  #   region: "us-east-1"
+  #   endpoint: ""          # custom endpoint for MinIO, R2, etc.
+  #   chunk_size: 64        # heights per S3 object
 
 rpc:
   # Address for the JSON-RPC API server (HTTP/WebSocket)
@@ -71,6 +82,12 @@ metrics:
   enabled: true
   # Address for the metrics server
   listen_addr: ":9091"
+
+profiling:
+  # Enable pprof endpoints (/debug/pprof/*)
+  enabled: false
+  # Bind address for profiling HTTP server (prefer loopback)
+  listen_addr: "127.0.0.1:6061"
 
 log:
   # Log level: trace, debug, info, warn, error, fatal, panic
@@ -133,12 +150,40 @@ func validateDataSource(ds *DataSourceConfig) error {
 	return nil
 }
 
+func validateStorage(s *StorageConfig) error {
+	switch s.Type {
+	case "s3":
+		if s.S3 == nil {
+			return fmt.Errorf("storage.s3 is required when storage.type is \"s3\"")
+		}
+		if s.S3.Bucket == "" {
+			return fmt.Errorf("storage.s3.bucket is required")
+		}
+		if s.S3.Region == "" && s.S3.Endpoint == "" {
+			return fmt.Errorf("storage.s3.region is required (unless endpoint is set)")
+		}
+		if s.S3.ChunkSize == 0 {
+			s.S3.ChunkSize = 64
+		}
+		if s.S3.ChunkSize < 0 {
+			return fmt.Errorf("storage.s3.chunk_size must be positive")
+		}
+	case "sqlite", "":
+		if s.DBPath == "" {
+			return fmt.Errorf("storage.db_path is required")
+		}
+	default:
+		return fmt.Errorf("storage.type %q is invalid; must be \"sqlite\" or \"s3\"", s.Type)
+	}
+	return nil
+}
+
 func validate(cfg *Config) error {
 	if err := validateDataSource(&cfg.DataSource); err != nil {
 		return err
 	}
-	if cfg.Storage.DBPath == "" {
-		return fmt.Errorf("storage.db_path is required")
+	if err := validateStorage(&cfg.Storage); err != nil {
+		return err
 	}
 	if cfg.RPC.ListenAddr == "" {
 		return fmt.Errorf("rpc.listen_addr is required")
@@ -157,6 +202,9 @@ func validate(cfg *Config) error {
 	}
 	if cfg.Metrics.Enabled && cfg.Metrics.ListenAddr == "" {
 		return fmt.Errorf("metrics.listen_addr is required when metrics are enabled")
+	}
+	if cfg.Profiling.Enabled && cfg.Profiling.ListenAddr == "" {
+		return fmt.Errorf("profiling.listen_addr is required when profiling is enabled")
 	}
 	if !validLogLevels[cfg.Log.Level] {
 		return fmt.Errorf("log.level %q is invalid; must be one of trace/debug/info/warn/error/fatal/panic", cfg.Log.Level)

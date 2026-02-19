@@ -38,7 +38,7 @@ type HeaderServiceClient interface {
 	// NetworkHead returns the current network head from the upstream node.
 	NetworkHead(ctx context.Context, in *NetworkHeadRequest, opts ...grpc.CallOption) (*NetworkHeadResponse, error)
 	// Subscribe streams new headers as they are indexed.
-	Subscribe(ctx context.Context, in *SubscribeHeadersRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SubscribeHeadersResponse], error)
+	Subscribe(ctx context.Context, in *HeaderServiceSubscribeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[HeaderServiceSubscribeResponse], error)
 }
 
 type headerServiceClient struct {
@@ -79,13 +79,13 @@ func (c *headerServiceClient) NetworkHead(ctx context.Context, in *NetworkHeadRe
 	return out, nil
 }
 
-func (c *headerServiceClient) Subscribe(ctx context.Context, in *SubscribeHeadersRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SubscribeHeadersResponse], error) {
+func (c *headerServiceClient) Subscribe(ctx context.Context, in *HeaderServiceSubscribeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[HeaderServiceSubscribeResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &HeaderService_ServiceDesc.Streams[0], HeaderService_Subscribe_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[SubscribeHeadersRequest, SubscribeHeadersResponse]{ClientStream: stream}
+	x := &grpc.GenericClientStream[HeaderServiceSubscribeRequest, HeaderServiceSubscribeResponse]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (c *headerServiceClient) Subscribe(ctx context.Context, in *SubscribeHeader
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type HeaderService_SubscribeClient = grpc.ServerStreamingClient[SubscribeHeadersResponse]
+type HeaderService_SubscribeClient = grpc.ServerStreamingClient[HeaderServiceSubscribeResponse]
 
 // HeaderServiceServer is the server API for HeaderService service.
 // All implementations must embed UnimplementedHeaderServiceServer
@@ -111,7 +111,7 @@ type HeaderServiceServer interface {
 	// NetworkHead returns the current network head from the upstream node.
 	NetworkHead(context.Context, *NetworkHeadRequest) (*NetworkHeadResponse, error)
 	// Subscribe streams new headers as they are indexed.
-	Subscribe(*SubscribeHeadersRequest, grpc.ServerStreamingServer[SubscribeHeadersResponse]) error
+	Subscribe(*HeaderServiceSubscribeRequest, grpc.ServerStreamingServer[HeaderServiceSubscribeResponse]) error
 	mustEmbedUnimplementedHeaderServiceServer()
 }
 
@@ -131,7 +131,7 @@ func (UnimplementedHeaderServiceServer) LocalHead(context.Context, *LocalHeadReq
 func (UnimplementedHeaderServiceServer) NetworkHead(context.Context, *NetworkHeadRequest) (*NetworkHeadResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method NetworkHead not implemented")
 }
-func (UnimplementedHeaderServiceServer) Subscribe(*SubscribeHeadersRequest, grpc.ServerStreamingServer[SubscribeHeadersResponse]) error {
+func (UnimplementedHeaderServiceServer) Subscribe(*HeaderServiceSubscribeRequest, grpc.ServerStreamingServer[HeaderServiceSubscribeResponse]) error {
 	return status.Error(codes.Unimplemented, "method Subscribe not implemented")
 }
 func (UnimplementedHeaderServiceServer) mustEmbedUnimplementedHeaderServiceServer() {}
@@ -210,15 +210,15 @@ func _HeaderService_NetworkHead_Handler(srv interface{}, ctx context.Context, de
 }
 
 func _HeaderService_Subscribe_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(SubscribeHeadersRequest)
+	m := new(HeaderServiceSubscribeRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(HeaderServiceServer).Subscribe(m, &grpc.GenericServerStream[SubscribeHeadersRequest, SubscribeHeadersResponse]{ServerStream: stream})
+	return srv.(HeaderServiceServer).Subscribe(m, &grpc.GenericServerStream[HeaderServiceSubscribeRequest, HeaderServiceSubscribeResponse]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type HeaderService_SubscribeServer = grpc.ServerStreamingServer[SubscribeHeadersResponse]
+type HeaderService_SubscribeServer = grpc.ServerStreamingServer[HeaderServiceSubscribeResponse]
 
 // HeaderService_ServiceDesc is the grpc.ServiceDesc for HeaderService service.
 // It's only intended for direct use with grpc.RegisterService,

@@ -21,7 +21,7 @@ type BlobServiceServer struct {
 	svc *api.Service
 }
 
-func (s *BlobServiceServer) Get(ctx context.Context, req *pb.GetBlobRequest) (*pb.GetBlobResponse, error) {
+func (s *BlobServiceServer) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
 	ns, err := bytesToNamespace(req.Namespace)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid namespace: %v", err)
@@ -34,14 +34,14 @@ func (s *BlobServiceServer) Get(ctx context.Context, req *pb.GetBlobRequest) (*p
 
 	for i := range blobs {
 		if bytes.Equal(blobs[i].Commitment, req.Commitment) {
-			return &pb.GetBlobResponse{Blob: blobToProto(&blobs[i])}, nil
+			return &pb.GetResponse{Blob: blobToProto(&blobs[i])}, nil
 		}
 	}
 
 	return nil, status.Error(codes.NotFound, store.ErrNotFound.Error())
 }
 
-func (s *BlobServiceServer) GetAll(ctx context.Context, req *pb.GetAllBlobsRequest) (*pb.GetAllBlobsResponse, error) {
+func (s *BlobServiceServer) GetAll(ctx context.Context, req *pb.GetAllRequest) (*pb.GetAllResponse, error) {
 	const maxNamespaces = 16
 	if len(req.Namespaces) > maxNamespaces {
 		return nil, status.Errorf(codes.InvalidArgument, "too many namespaces: %d (max %d)", len(req.Namespaces), maxNamespaces)
@@ -58,11 +58,23 @@ func (s *BlobServiceServer) GetAll(ctx context.Context, req *pb.GetAllBlobsReque
 
 	var allBlobs []types.Blob
 	for _, ns := range nsList {
-		blobs, err := s.svc.Store().GetBlobs(ctx, ns, req.Height, req.Height, int(req.Limit), int(req.Offset))
+		blobs, err := s.svc.Store().GetBlobs(ctx, ns, req.Height, req.Height, 0, 0)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "get blobs: %v", err)
 		}
 		allBlobs = append(allBlobs, blobs...)
+	}
+
+	// Apply pagination to the aggregate result.
+	if req.Offset > 0 {
+		if int(req.Offset) >= len(allBlobs) {
+			allBlobs = nil
+		} else {
+			allBlobs = allBlobs[req.Offset:]
+		}
+	}
+	if req.Limit > 0 && int(req.Limit) < len(allBlobs) {
+		allBlobs = allBlobs[:req.Limit]
 	}
 
 	pbBlobs := make([]*pb.Blob, len(allBlobs))
@@ -70,10 +82,10 @@ func (s *BlobServiceServer) GetAll(ctx context.Context, req *pb.GetAllBlobsReque
 		pbBlobs[i] = blobToProto(&allBlobs[i])
 	}
 
-	return &pb.GetAllBlobsResponse{Blobs: pbBlobs}, nil
+	return &pb.GetAllResponse{Blobs: pbBlobs}, nil
 }
 
-func (s *BlobServiceServer) Subscribe(req *pb.SubscribeBlobsRequest, stream grpc.ServerStreamingServer[pb.SubscribeBlobsResponse]) error {
+func (s *BlobServiceServer) Subscribe(req *pb.BlobServiceSubscribeRequest, stream grpc.ServerStreamingServer[pb.BlobServiceSubscribeResponse]) error {
 	ns, err := bytesToNamespace(req.Namespace)
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid namespace: %v", err)
@@ -95,7 +107,7 @@ func (s *BlobServiceServer) Subscribe(req *pb.SubscribeBlobsRequest, stream grpc
 			for i := range ev.Blobs {
 				pbBlobs[i] = blobToProto(&ev.Blobs[i])
 			}
-			if err := stream.Send(&pb.SubscribeBlobsResponse{
+			if err := stream.Send(&pb.BlobServiceSubscribeResponse{
 				Height: ev.Height,
 				Blobs:  pbBlobs,
 			}); err != nil {

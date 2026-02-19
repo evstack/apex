@@ -55,14 +55,27 @@ func (s *Service) BlobGet(ctx context.Context, height uint64, namespace types.Na
 
 // BlobGetAll returns all blobs for the given namespaces at the given height.
 // limit=0 means no limit; offset=0 means no offset.
+// Pagination is applied to the aggregate result across all namespaces.
 func (s *Service) BlobGetAll(ctx context.Context, height uint64, namespaces []types.Namespace, limit, offset int) (json.RawMessage, error) {
 	var allBlobs []types.Blob
 	for _, ns := range namespaces {
-		blobs, err := s.store.GetBlobs(ctx, ns, height, height, limit, offset)
+		blobs, err := s.store.GetBlobs(ctx, ns, height, height, 0, 0)
 		if err != nil {
 			return nil, fmt.Errorf("get blobs for namespace %s: %w", ns, err)
 		}
 		allBlobs = append(allBlobs, blobs...)
+	}
+
+	// Apply pagination to the aggregate result.
+	if offset > 0 {
+		if offset >= len(allBlobs) {
+			allBlobs = nil
+		} else {
+			allBlobs = allBlobs[offset:]
+		}
+	}
+	if limit > 0 && limit < len(allBlobs) {
+		allBlobs = allBlobs[:limit]
 	}
 
 	if len(allBlobs) == 0 {

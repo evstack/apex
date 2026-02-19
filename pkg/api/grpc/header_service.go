@@ -58,7 +58,7 @@ func (s *HeaderServiceServer) NetworkHead(ctx context.Context, _ *pb.NetworkHead
 	return &pb.NetworkHeadResponse{Header: headerToProto(hdr)}, nil
 }
 
-func (s *HeaderServiceServer) Subscribe(_ *pb.SubscribeHeadersRequest, stream grpc.ServerStreamingServer[pb.SubscribeHeadersResponse]) error {
+func (s *HeaderServiceServer) Subscribe(_ *pb.HeaderServiceSubscribeRequest, stream grpc.ServerStreamingServer[pb.HeaderServiceSubscribeResponse]) error {
 	sub := s.svc.HeaderSubscribe()
 	defer s.svc.Notifier().Unsubscribe(sub)
 
@@ -72,7 +72,7 @@ func (s *HeaderServiceServer) Subscribe(_ *pb.SubscribeHeadersRequest, stream gr
 				return nil
 			}
 			if ev.Header != nil {
-				if err := stream.Send(&pb.SubscribeHeadersResponse{Header: headerToProto(ev.Header)}); err != nil {
+				if err := stream.Send(&pb.HeaderServiceSubscribeResponse{Header: headerToProto(ev.Header)}); err != nil {
 					return err
 				}
 			}

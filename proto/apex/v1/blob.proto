@@ -9,43 +9,43 @@ import "apex/v1/types.proto";
 // BlobService provides access to indexed blobs.
 service BlobService {
   // Get returns a single blob matching the namespace and commitment at the given height.
-  rpc Get(GetBlobRequest) returns (GetBlobResponse);
+  rpc Get(GetRequest) returns (GetResponse);
 
   // GetAll returns all blobs for the given namespaces at the given height.
-  rpc GetAll(GetAllBlobsRequest) returns (GetAllBlobsResponse);
+  rpc GetAll(GetAllRequest) returns (GetAllResponse);
 
   // Subscribe streams blob events for the given namespace.
-  rpc Subscribe(SubscribeBlobsRequest) returns (stream SubscribeBlobsResponse);
+  rpc Subscribe(BlobServiceSubscribeRequest) returns (stream BlobServiceSubscribeResponse);
 }
 
-message GetBlobRequest {
+message GetRequest {
   uint64 height = 1;
   bytes namespace = 2;
   bytes commitment = 3;
 }
 
-message GetBlobResponse {
+message GetResponse {
   Blob blob = 1;
 }
 
-message GetAllBlobsRequest {
+message GetAllRequest {
   uint64 height = 1;
   repeated bytes namespaces = 2;
-  // Pagination: maximum number of blobs to return. 0 means server default.
+  // Pagination: maximum number of blobs to return. 0 means no limit.
   int32 limit = 3;
   // Pagination: number of blobs to skip.
   int32 offset = 4;
 }
 
-message GetAllBlobsResponse {
+message GetAllResponse {
   repeated Blob blobs = 1;
 }
 
-message SubscribeBlobsRequest {
+message BlobServiceSubscribeRequest {
   bytes namespace = 1;
 }
 
-message SubscribeBlobsResponse {
+message BlobServiceSubscribeResponse {
   uint64 height = 1;
   repeated Blob blobs = 2;
 }

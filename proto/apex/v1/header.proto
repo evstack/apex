@@ -18,7 +18,7 @@ service HeaderService {
   rpc NetworkHead(NetworkHeadRequest) returns (NetworkHeadResponse);
 
   // Subscribe streams new headers as they are indexed.
-  rpc Subscribe(SubscribeHeadersRequest) returns (stream SubscribeHeadersResponse);
+  rpc Subscribe(HeaderServiceSubscribeRequest) returns (stream HeaderServiceSubscribeResponse);
 }
 
 message GetByHeightRequest {
@@ -41,8 +41,8 @@ message NetworkHeadResponse {
   Header header = 1;
 }
 
-message SubscribeHeadersRequest {}
+message HeaderServiceSubscribeRequest {}
 
-message SubscribeHeadersResponse {
+message HeaderServiceSubscribeResponse {
   Header header = 1;
 }

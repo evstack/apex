@@ -269,26 +269,26 @@ func (x *NetworkHeadResponse) GetHeader() *Header {
 	return nil
 }
 
-type SubscribeHeadersRequest struct {
+type HeaderServiceSubscribeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SubscribeHeadersRequest) Reset() {
-	*x = SubscribeHeadersRequest{}
+func (x *HeaderServiceSubscribeRequest) Reset() {
+	*x = HeaderServiceSubscribeRequest{}
 	mi := &file_apex_v1_header_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SubscribeHeadersRequest) String() string {
+func (x *HeaderServiceSubscribeRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SubscribeHeadersRequest) ProtoMessage() {}
+func (*HeaderServiceSubscribeRequest) ProtoMessage() {}
 
-func (x *SubscribeHeadersRequest) ProtoReflect() protoreflect.Message {
+func (x *HeaderServiceSubscribeRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_apex_v1_header_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -300,32 +300,32 @@ func (x *SubscribeHeadersRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SubscribeHeadersRequest.ProtoReflect.Descriptor instead.
-func (*SubscribeHeadersRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use HeaderServiceSubscribeRequest.ProtoReflect.Descriptor instead.
+func (*HeaderServiceSubscribeRequest) Descriptor() ([]byte, []int) {
 	return file_apex_v1_header_proto_rawDescGZIP(), []int{6}
 }
 
-type SubscribeHeadersResponse struct {
+type HeaderServiceSubscribeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Header        *Header                `protobuf:"bytes,1,opt,name=header,proto3" json:"header,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SubscribeHeadersResponse) Reset() {
-	*x = SubscribeHeadersResponse{}
+func (x *HeaderServiceSubscribeResponse) Reset() {
+	*x = HeaderServiceSubscribeResponse{}
 	mi := &file_apex_v1_header_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SubscribeHeadersResponse) String() string {
+func (x *HeaderServiceSubscribeResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SubscribeHeadersResponse) ProtoMessage() {}
+func (*HeaderServiceSubscribeResponse) ProtoMessage() {}
 
-func (x *SubscribeHeadersResponse) ProtoReflect() protoreflect.Message {
+func (x *HeaderServiceSubscribeResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_apex_v1_header_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -337,12 +337,12 @@ func (x *SubscribeHeadersResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SubscribeHeadersResponse.ProtoReflect.Descriptor instead.
-func (*SubscribeHeadersResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use HeaderServiceSubscribeResponse.ProtoReflect.Descriptor instead.
+func (*HeaderServiceSubscribeResponse) Descriptor() ([]byte, []int) {
 	return file_apex_v1_header_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *SubscribeHeadersResponse) GetHeader() *Header {
+func (x *HeaderServiceSubscribeResponse) GetHeader() *Header {
 	if x != nil {
 		return x.Header
 	}
@@ -363,15 +363,15 @@ const file_apex_v1_header_proto_rawDesc = "" +
 	"\x06header\x18\x01 \x01(\v2\x0f.apex.v1.HeaderR\x06header\"\x14\n" +
 	"\x12NetworkHeadRequest\">\n" +
 	"\x13NetworkHeadResponse\x12'\n" +
-	"\x06header\x18\x01 \x01(\v2\x0f.apex.v1.HeaderR\x06header\"\x19\n" +
-	"\x17SubscribeHeadersRequest\"C\n" +
-	"\x18SubscribeHeadersResponse\x12'\n" +
-	"\x06header\x18\x01 \x01(\v2\x0f.apex.v1.HeaderR\x06header2\xbb\x02\n" +
+	"\x06header\x18\x01 \x01(\v2\x0f.apex.v1.HeaderR\x06header\"\x1f\n" +
+	"\x1dHeaderServiceSubscribeRequest\"I\n" +
+	"\x1eHeaderServiceSubscribeResponse\x12'\n" +
+	"\x06header\x18\x01 \x01(\v2\x0f.apex.v1.HeaderR\x06header2\xc7\x02\n" +
 	"\rHeaderService\x12H\n" +
 	"\vGetByHeight\x12\x1b.apex.v1.GetByHeightRequest\x1a\x1c.apex.v1.GetByHeightResponse\x12B\n" +
 	"\tLocalHead\x12\x19.apex.v1.LocalHeadRequest\x1a\x1a.apex.v1.LocalHeadResponse\x12H\n" +
-	"\vNetworkHead\x12\x1b.apex.v1.NetworkHeadRequest\x1a\x1c.apex.v1.NetworkHeadResponse\x12R\n" +
-	"\tSubscribe\x12 .apex.v1.SubscribeHeadersRequest\x1a!.apex.v1.SubscribeHeadersResponse0\x01B.Z,github.com/evstack/apex/pkg/api/grpc/gen;genb\x06proto3"
+	"\vNetworkHead\x12\x1b.apex.v1.NetworkHeadRequest\x1a\x1c.apex.v1.NetworkHeadResponse\x12^\n" +
+	"\tSubscribe\x12&.apex.v1.HeaderServiceSubscribeRequest\x1a'.apex.v1.HeaderServiceSubscribeResponse0\x01B.Z,github.com/evstack/apex/pkg/api/grpc/gen;genb\x06proto3"
 
 var (
 	file_apex_v1_header_proto_rawDescOnce sync.Once
@@ -387,29 +387,29 @@ func file_apex_v1_header_proto_rawDescGZIP() []byte {
 
 var file_apex_v1_header_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_apex_v1_header_proto_goTypes = []any{
-	(*GetByHeightRequest)(nil),       // 0: apex.v1.GetByHeightRequest
-	(*GetByHeightResponse)(nil),      // 1: apex.v1.GetByHeightResponse
-	(*LocalHeadRequest)(nil),         // 2: apex.v1.LocalHeadRequest
-	(*LocalHeadResponse)(nil),        // 3: apex.v1.LocalHeadResponse
-	(*NetworkHeadRequest)(nil),       // 4: apex.v1.NetworkHeadRequest
-	(*NetworkHeadResponse)(nil),      // 5: apex.v1.NetworkHeadResponse
-	(*SubscribeHeadersRequest)(nil),  // 6: apex.v1.SubscribeHeadersRequest
-	(*SubscribeHeadersResponse)(nil), // 7: apex.v1.SubscribeHeadersResponse
-	(*Header)(nil),                   // 8: apex.v1.Header
+	(*GetByHeightRequest)(nil),             // 0: apex.v1.GetByHeightRequest
+	(*GetByHeightResponse)(nil),            // 1: apex.v1.GetByHeightResponse
+	(*LocalHeadRequest)(nil),               // 2: apex.v1.LocalHeadRequest
+	(*LocalHeadResponse)(nil),              // 3: apex.v1.LocalHeadResponse
+	(*NetworkHeadRequest)(nil),             // 4: apex.v1.NetworkHeadRequest
+	(*NetworkHeadResponse)(nil),            // 5: apex.v1.NetworkHeadResponse
+	(*HeaderServiceSubscribeRequest)(nil),  // 6: apex.v1.HeaderServiceSubscribeRequest
+	(*HeaderServiceSubscribeResponse)(nil), // 7: apex.v1.HeaderServiceSubscribeResponse
+	(*Header)(nil),                         // 8: apex.v1.Header
 }
 var file_apex_v1_header_proto_depIdxs = []int32{
 	8, // 0: apex.v1.GetByHeightResponse.header:type_name -> apex.v1.Header
 	8, // 1: apex.v1.LocalHeadResponse.header:type_name -> apex.v1.Header
 	8, // 2: apex.v1.NetworkHeadResponse.header:type_name -> apex.v1.Header
-	8, // 3: apex.v1.SubscribeHeadersResponse.header:type_name -> apex.v1.Header
+	8, // 3: apex.v1.HeaderServiceSubscribeResponse.header:type_name -> apex.v1.Header
 	0, // 4: apex.v1.HeaderService.GetByHeight:input_type -> apex.v1.GetByHeightRequest
 	2, // 5: apex.v1.HeaderService.LocalHead:input_type -> apex.v1.LocalHeadRequest
 	4, // 6: apex.v1.HeaderService.NetworkHead:input_type -> apex.v1.NetworkHeadRequest
-	6, // 7: apex.v1.HeaderService.Subscribe:input_type -> apex.v1.SubscribeHeadersRequest
+	6, // 7: apex.v1.HeaderService.Subscribe:input_type -> apex.v1.HeaderServiceSubscribeRequest
 	1, // 8: apex.v1.HeaderService.GetByHeight:output_type -> apex.v1.GetByHeightResponse
 	3, // 9: apex.v1.HeaderService.LocalHead:output_type -> apex.v1.LocalHeadResponse
 	5, // 10: apex.v1.HeaderService.NetworkHead:output_type -> apex.v1.NetworkHeadResponse
-	7, // 11: apex.v1.HeaderService.Subscribe:output_type -> apex.v1.SubscribeHeadersResponse
+	7, // 11: apex.v1.HeaderService.Subscribe:output_type -> apex.v1.HeaderServiceSubscribeResponse
 	8, // [8:12] is the sub-list for method output_type
 	4, // [4:8] is the sub-list for method input_type
 	4, // [4:4] is the sub-list for extension type_name

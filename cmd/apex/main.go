@@ -189,6 +189,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	grpcSrv := grpcapi.NewServer(svc, log.Logger)
 	lis, err := net.Listen("tcp", cfg.RPC.GRPCListenAddr)
 	if err != nil {
+		_ = httpSrv.Close()
 		return fmt.Errorf("listen gRPC: %w", err)
 	}
 

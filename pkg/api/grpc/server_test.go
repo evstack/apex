@@ -175,7 +175,7 @@ func TestGRPCBlobGet(t *testing.T) {
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	client := startTestServer(t, svc)
 
-	resp, err := client.Get(context.Background(), &pb.GetBlobRequest{
+	resp, err := client.Get(context.Background(), &pb.GetRequest{
 		Height:     10,
 		Namespace:  ns[:],
 		Commitment: commitment,
@@ -204,7 +204,7 @@ func TestGRPCBlobGetAll(t *testing.T) {
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	client := startTestServer(t, svc)
 
-	resp, err := client.GetAll(context.Background(), &pb.GetAllBlobsRequest{
+	resp, err := client.GetAll(context.Background(), &pb.GetAllRequest{
 		Height:     10,
 		Namespaces: [][]byte{ns[:]},
 	})
@@ -298,7 +298,7 @@ func TestGRPCBlobSubscribe(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	stream, err := client.Subscribe(ctx, &pb.SubscribeBlobsRequest{
+	stream, err := client.Subscribe(ctx, &pb.BlobServiceSubscribeRequest{
 		Namespace: ns[:],
 	})
 	if err != nil {

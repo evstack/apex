@@ -2,6 +2,7 @@ package fetch
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/evstack/apex/pkg/types"
 )
@@ -18,4 +19,10 @@ type DataFetcher interface {
 	SubscribeHeaders(ctx context.Context) (<-chan *types.Header, error)
 
 	Close() error
+}
+
+// ProofForwarder forwards proof-related requests to an upstream Celestia node.
+type ProofForwarder interface {
+	GetProof(ctx context.Context, height uint64, namespace []byte, commitment []byte) (json.RawMessage, error)
+	Included(ctx context.Context, height uint64, namespace []byte, proof json.RawMessage, commitment []byte) (bool, error)
 }

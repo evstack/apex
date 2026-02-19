@@ -4,18 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
 	"github.com/evstack/apex/config"
+	"github.com/evstack/apex/pkg/api"
+	grpcapi "github.com/evstack/apex/pkg/api/grpc"
+	jsonrpcapi "github.com/evstack/apex/pkg/api/jsonrpc"
 	"github.com/evstack/apex/pkg/fetch"
 	"github.com/evstack/apex/pkg/store"
 	syncer "github.com/evstack/apex/pkg/sync"
+	"github.com/evstack/apex/pkg/types"
 )
 
 // Set via ldflags at build time.
@@ -148,13 +155,50 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	}
 	defer fetcher.Close() //nolint:errcheck
 
-	// Build and run the sync coordinator.
+	// Set up API layer.
+	notifier := api.NewNotifier(cfg.Subscription.BufferSize, log.Logger)
+	svc := api.NewService(db, fetcher, fetcher, notifier, log.Logger)
+
+	// Build and run the sync coordinator with observer hook.
 	coord := syncer.New(db, fetcher,
 		syncer.WithStartHeight(cfg.Sync.StartHeight),
 		syncer.WithBatchSize(cfg.Sync.BatchSize),
 		syncer.WithConcurrency(cfg.Sync.Concurrency),
 		syncer.WithLogger(log.Logger),
+		syncer.WithObserver(func(h uint64, hdr *types.Header, blobs []types.Blob) {
+			notifier.Publish(api.HeightEvent{Height: h, Header: hdr, Blobs: blobs})
+		}),
 	)
+
+	// Start JSON-RPC server.
+	rpcServer := jsonrpcapi.NewServer(svc, log.Logger)
+	httpSrv := &http.Server{
+		Addr:              cfg.RPC.ListenAddr,
+		Handler:           rpcServer,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	go func() {
+		log.Info().Str("addr", cfg.RPC.ListenAddr).Msg("JSON-RPC server listening")
+		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error().Err(err).Msg("JSON-RPC server error")
+		}
+	}()
+
+	// Start gRPC server.
+	grpcSrv := grpcapi.NewServer(svc, log.Logger)
+	lis, err := net.Listen("tcp", cfg.RPC.GRPCListenAddr)
+	if err != nil {
+		_ = httpSrv.Close()
+		return fmt.Errorf("listen gRPC: %w", err)
+	}
+
+	go func() {
+		log.Info().Str("addr", cfg.RPC.GRPCListenAddr).Msg("gRPC server listening")
+		if err := grpcSrv.Serve(lis); err != nil {
+			log.Error().Err(err).Msg("gRPC server error")
+		}
+	}()
 
 	log.Info().
 		Int("namespaces", len(namespaces)).
@@ -162,6 +206,28 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		Msg("sync coordinator starting")
 
 	err = coord.Run(ctx)
+
+	// Graceful shutdown.
+	stopped := make(chan struct{})
+	go func() {
+		grpcSrv.GracefulStop()
+		close(stopped)
+	}()
+
+	grpcTimeout := time.After(5 * time.Second)
+	select {
+	case <-stopped:
+	case <-grpcTimeout:
+		log.Warn().Msg("gRPC graceful stop timed out, forcing stop")
+		grpcSrv.Stop()
+	}
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if shutdownErr := httpSrv.Shutdown(shutdownCtx); shutdownErr != nil {
+		log.Error().Err(shutdownErr).Msg("JSON-RPC server shutdown error")
+	}
+
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return fmt.Errorf("coordinator: %w", err)
 	}

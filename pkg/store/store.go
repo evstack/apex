@@ -17,7 +17,8 @@ type Store interface {
 
 	// GetBlobs returns blobs for the given namespace in the height range
 	// [startHeight, endHeight] (both inclusive).
-	GetBlobs(ctx context.Context, ns types.Namespace, startHeight, endHeight uint64) ([]types.Blob, error)
+	// limit=0 means no limit; offset=0 means no offset.
+	GetBlobs(ctx context.Context, ns types.Namespace, startHeight, endHeight uint64, limit, offset int) ([]types.Blob, error)
 
 	PutHeader(ctx context.Context, header *types.Header) error
 	GetHeader(ctx context.Context, height uint64) (*types.Header, error)

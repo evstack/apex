@@ -36,5 +36,9 @@ tidy-check:
     go mod tidy
     git diff --exit-code go.mod go.sum
 
+# Generate protobuf code
+proto:
+    buf generate
+
 # Run all checks (CI equivalent)
 check: tidy-check lint test build

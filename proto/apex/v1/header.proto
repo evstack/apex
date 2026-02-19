@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package apex.v1;
+
+option go_package = "github.com/evstack/apex/pkg/api/grpc/gen;gen";
+
+import "apex/v1/types.proto";
+
+// HeaderService provides access to indexed headers.
+service HeaderService {
+  // GetByHeight returns the header at the given height.
+  rpc GetByHeight(GetByHeightRequest) returns (GetByHeightResponse);
+
+  // LocalHead returns the header at the latest synced height.
+  rpc LocalHead(LocalHeadRequest) returns (LocalHeadResponse);
+
+  // NetworkHead returns the current network head from the upstream node.
+  rpc NetworkHead(NetworkHeadRequest) returns (NetworkHeadResponse);
+
+  // Subscribe streams new headers as they are indexed.
+  rpc Subscribe(HeaderServiceSubscribeRequest) returns (stream HeaderServiceSubscribeResponse);
+}
+
+message GetByHeightRequest {
+  uint64 height = 1;
+}
+
+message GetByHeightResponse {
+  Header header = 1;
+}
+
+message LocalHeadRequest {}
+
+message LocalHeadResponse {
+  Header header = 1;
+}
+
+message NetworkHeadRequest {}
+
+message NetworkHeadResponse {
+  Header header = 1;
+}
+
+message HeaderServiceSubscribeRequest {}
+
+message HeaderServiceSubscribeResponse {
+  Header header = 1;
+}

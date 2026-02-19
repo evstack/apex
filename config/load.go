@@ -43,8 +43,10 @@ storage:
   db_path: "apex.db"
 
 rpc:
-  # Address for the HTTP API server
+  # Address for the JSON-RPC API server (HTTP/WebSocket)
   listen_addr: ":8080"
+  # Address for the gRPC API server
+  grpc_listen_addr: ":9090"
 
 sync:
   # Height to start syncing from (0 = genesis)
@@ -53,6 +55,10 @@ sync:
   batch_size: 64
   # Number of concurrent fetch workers
   concurrency: 4
+
+subscription:
+  # Event buffer size per subscriber (for API subscriptions)
+  buffer_size: 64
 
 log:
   # Log level: trace, debug, info, warn, error, fatal, panic
@@ -101,11 +107,20 @@ func validate(cfg *Config) error {
 	if cfg.Storage.DBPath == "" {
 		return fmt.Errorf("storage.db_path is required")
 	}
+	if cfg.RPC.ListenAddr == "" {
+		return fmt.Errorf("rpc.listen_addr is required")
+	}
+	if cfg.RPC.GRPCListenAddr == "" {
+		return fmt.Errorf("rpc.grpc_listen_addr is required")
+	}
 	if cfg.Sync.BatchSize <= 0 {
 		return fmt.Errorf("sync.batch_size must be positive")
 	}
 	if cfg.Sync.Concurrency <= 0 {
 		return fmt.Errorf("sync.concurrency must be positive")
+	}
+	if cfg.Subscription.BufferSize <= 0 {
+		return fmt.Errorf("subscription.buffer_size must be positive")
 	}
 	if !validLogLevels[cfg.Log.Level] {
 		return fmt.Errorf("log.level %q is invalid; must be one of trace/debug/info/warn/error/fatal/panic", cfg.Log.Level)

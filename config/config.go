@@ -8,11 +8,12 @@ import (
 
 // Config is the top-level configuration for the Apex indexer.
 type Config struct {
-	DataSource DataSourceConfig `yaml:"data_source"`
-	Storage    StorageConfig    `yaml:"storage"`
-	RPC        RPCConfig        `yaml:"rpc"`
-	Sync       SyncConfig       `yaml:"sync"`
-	Log        LogConfig        `yaml:"log"`
+	DataSource   DataSourceConfig   `yaml:"data_source"`
+	Storage      StorageConfig      `yaml:"storage"`
+	RPC          RPCConfig          `yaml:"rpc"`
+	Sync         SyncConfig         `yaml:"sync"`
+	Subscription SubscriptionConfig `yaml:"subscription"`
+	Log          LogConfig          `yaml:"log"`
 }
 
 // DataSourceConfig configures the Celestia node connection.
@@ -27,9 +28,10 @@ type StorageConfig struct {
 	DBPath string `yaml:"db_path"`
 }
 
-// RPCConfig configures the HTTP API server.
+// RPCConfig configures the API servers.
 type RPCConfig struct {
-	ListenAddr string `yaml:"listen_addr"`
+	ListenAddr     string `yaml:"listen_addr"`
+	GRPCListenAddr string `yaml:"grpc_listen_addr"`
 }
 
 // SyncConfig configures the sync coordinator.
@@ -37,6 +39,11 @@ type SyncConfig struct {
 	StartHeight uint64 `yaml:"start_height"`
 	BatchSize   int    `yaml:"batch_size"`
 	Concurrency int    `yaml:"concurrency"`
+}
+
+// SubscriptionConfig configures API event subscriptions.
+type SubscriptionConfig struct {
+	BufferSize int `yaml:"buffer_size"`
 }
 
 // LogConfig configures logging.
@@ -55,11 +62,15 @@ func DefaultConfig() Config {
 			DBPath: "apex.db",
 		},
 		RPC: RPCConfig{
-			ListenAddr: ":8080",
+			ListenAddr:     ":8080",
+			GRPCListenAddr: ":9090",
 		},
 		Sync: SyncConfig{
 			BatchSize:   64,
 			Concurrency: 4,
+		},
+		Subscription: SubscriptionConfig{
+			BufferSize: 64,
 		},
 		Log: LogConfig{
 			Level:  "info",

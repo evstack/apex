@@ -26,7 +26,9 @@ type headerAPI struct {
 
 // blobAPI defines the JSON-RPC stubs for the Celestia "blob" namespace.
 type blobAPI struct {
-	GetAll func(ctx context.Context, height uint64, namespaces [][]byte) (json.RawMessage, error)
+	GetAll   func(ctx context.Context, height uint64, namespaces [][]byte) (json.RawMessage, error)
+	GetProof func(ctx context.Context, height uint64, namespace []byte, commitment []byte) (json.RawMessage, error)
+	Included func(ctx context.Context, height uint64, namespace []byte, proof json.RawMessage, commitment []byte) (bool, error)
 }
 
 // CelestiaNodeFetcher implements DataFetcher using a Celestia node's JSON-RPC API.
@@ -125,6 +127,24 @@ func (f *CelestiaNodeFetcher) SubscribeHeaders(ctx context.Context) (<-chan *typ
 	}()
 
 	return out, nil
+}
+
+// GetProof forwards a blob proof request to the upstream Celestia node.
+func (f *CelestiaNodeFetcher) GetProof(ctx context.Context, height uint64, namespace, commitment []byte) (json.RawMessage, error) {
+	raw, err := f.blob.GetProof(ctx, height, namespace, commitment)
+	if err != nil {
+		return nil, fmt.Errorf("blob.GetProof(%d): %w", height, err)
+	}
+	return raw, nil
+}
+
+// Included forwards a blob inclusion check to the upstream Celestia node.
+func (f *CelestiaNodeFetcher) Included(ctx context.Context, height uint64, namespace []byte, proof json.RawMessage, commitment []byte) (bool, error) {
+	ok, err := f.blob.Included(ctx, height, namespace, proof, commitment)
+	if err != nil {
+		return false, fmt.Errorf("blob.Included(%d): %w", height, err)
+	}
+	return ok, nil
 }
 
 func (f *CelestiaNodeFetcher) Close() error {

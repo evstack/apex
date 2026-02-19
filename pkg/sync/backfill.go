@@ -18,6 +18,7 @@ type Backfiller struct {
 	fetcher     fetch.DataFetcher
 	batchSize   int
 	concurrency int
+	observer    HeightObserver
 	log         zerolog.Logger
 }
 
@@ -121,8 +122,9 @@ func (b *Backfiller) processHeight(ctx context.Context, height uint64, namespace
 		return fmt.Errorf("put header: %w", err)
 	}
 
+	var blobs []types.Blob
 	if len(namespaces) > 0 {
-		blobs, err := b.fetcher.GetBlobs(ctx, height, namespaces)
+		blobs, err = b.fetcher.GetBlobs(ctx, height, namespaces)
 		if err != nil {
 			return fmt.Errorf("get blobs: %w", err)
 		}
@@ -131,6 +133,10 @@ func (b *Backfiller) processHeight(ctx context.Context, height uint64, namespace
 				return fmt.Errorf("put blobs: %w", err)
 			}
 		}
+	}
+
+	if b.observer != nil {
+		b.observer(height, hdr, blobs)
 	}
 
 	return nil

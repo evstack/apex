@@ -33,14 +33,15 @@ func (sm *SubscriptionManager) Run(ctx context.Context) error {
 		return fmt.Errorf("get namespaces: %w", err)
 	}
 
-	// Determine the last processed height from the store.
-	var lastHeight uint64
+	// Determine the last processed height and network height from the store.
+	var lastHeight, networkHeight uint64
 	ss, err := sm.store.GetSyncState(ctx)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return fmt.Errorf("get sync state: %w", err)
 	}
 	if ss != nil {
 		lastHeight = ss.LatestHeight
+		networkHeight = ss.NetworkHeight
 	}
 
 	for {
@@ -65,7 +66,7 @@ func (sm *SubscriptionManager) Run(ctx context.Context) error {
 				return ErrGapDetected
 			}
 
-			if err := sm.processHeader(ctx, hdr, namespaces); err != nil {
+			if err := sm.processHeader(ctx, hdr, namespaces, networkHeight); err != nil {
 				return fmt.Errorf("process height %d: %w", hdr.Height, err)
 			}
 
@@ -74,7 +75,7 @@ func (sm *SubscriptionManager) Run(ctx context.Context) error {
 	}
 }
 
-func (sm *SubscriptionManager) processHeader(ctx context.Context, hdr *types.Header, namespaces []types.Namespace) error {
+func (sm *SubscriptionManager) processHeader(ctx context.Context, hdr *types.Header, namespaces []types.Namespace, networkHeight uint64) error {
 	if err := sm.store.PutHeader(ctx, hdr); err != nil {
 		return fmt.Errorf("put header: %w", err)
 	}
@@ -92,8 +93,9 @@ func (sm *SubscriptionManager) processHeader(ctx context.Context, hdr *types.Hea
 	}
 
 	if err := sm.store.SetSyncState(ctx, types.SyncStatus{
-		State:        types.Streaming,
-		LatestHeight: hdr.Height,
+		State:         types.Streaming,
+		LatestHeight:  hdr.Height,
+		NetworkHeight: networkHeight,
 	}); err != nil {
 		return fmt.Errorf("set sync state: %w", err)
 	}

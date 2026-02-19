@@ -151,12 +151,13 @@ func (f *mockFetcher) addBlobs(height uint64, blobs []types.Blob) {
 }
 
 func (f *mockFetcher) GetHeader(ctx context.Context, height uint64) (*types.Header, error) {
-	if f.getHdrFn != nil {
-		return f.getHdrFn(ctx, height)
-	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	fn := f.getHdrFn
 	h, ok := f.headers[height]
+	f.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, height)
+	}
 	if !ok {
 		return nil, store.ErrNotFound
 	}

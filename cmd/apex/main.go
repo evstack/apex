@@ -117,7 +117,7 @@ func setupLogger(cfg config.LogConfig) {
 	}
 }
 
-func runIndexer(_ context.Context, cfg *config.Config) error {
+func runIndexer(ctx context.Context, cfg *config.Config) error {
 	// Parse namespaces from config.
 	namespaces, err := cfg.ParsedNamespaces()
 	if err != nil {
@@ -132,7 +132,7 @@ func runIndexer(_ context.Context, cfg *config.Config) error {
 	defer db.Close() //nolint:errcheck
 
 	// Persist configured namespaces.
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	for _, ns := range namespaces {

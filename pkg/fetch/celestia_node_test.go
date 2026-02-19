@@ -128,14 +128,14 @@ func TestMapBlobs(t *testing.T) {
 	}
 }
 
-func TestMapBlobsNull(t *testing.T) {
+func TestMapBlobsEmpty(t *testing.T) {
 	for _, input := range []string{"null", "[]", ""} {
 		blobs, err := mapBlobs(json.RawMessage(input), 1)
 		if err != nil {
 			t.Errorf("mapBlobs(%q): %v", input, err)
 		}
-		if blobs != nil {
-			t.Errorf("mapBlobs(%q) = %v, want nil", input, blobs)
+		if len(blobs) != 0 {
+			t.Errorf("mapBlobs(%q) = %v, want empty", input, blobs)
 		}
 	}
 }

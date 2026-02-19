@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"errors"
 	"fmt"
 	"time"
 
@@ -29,6 +30,9 @@ func Open(path string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
+	// TODO(phase2): split into a write pool (max 1 conn) and a read pool
+	// (max N conns) so API reads don't block behind sync writes. WAL mode
+	// supports concurrent readers alongside a single writer.
 	db.SetMaxOpenConns(1)
 
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
@@ -163,7 +167,7 @@ func (s *SQLiteStore) GetHeader(ctx context.Context, height uint64) (*types.Head
 		`SELECT height, hash, data_hash, time_ns, raw_header FROM headers WHERE height = ?`,
 		height).Scan(&h.Height, &h.Hash, &h.DataHash, &timeNs, &h.RawHeader)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("query header at height %d: %w", height, err)
@@ -211,7 +215,7 @@ func (s *SQLiteStore) GetSyncState(ctx context.Context) (*types.SyncStatus, erro
 		`SELECT state, latest_height, network_height FROM sync_state WHERE id = 1`).
 		Scan(&state, &latestHeight, &networkHeight)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("query sync_state: %w", err)
@@ -249,7 +253,7 @@ func scanBlob(row *sql.Row) (*types.Blob, error) {
 	var nsBytes []byte
 	err := row.Scan(&b.Height, &nsBytes, &b.Commitment, &b.Data, &b.ShareVersion, &b.Signer, &b.Index)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("scan blob: %w", err)

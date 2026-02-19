@@ -102,14 +102,22 @@ func (f *CelestiaNodeFetcher) SubscribeHeaders(ctx context.Context) (<-chan *typ
 	out := make(chan *types.Header, 64)
 	go func() {
 		defer close(out)
-		for raw := range rawCh {
-			hdr, err := mapHeader(raw)
-			if err != nil {
-				f.log.Error().Err(err).Msg("failed to parse subscribed header")
-				continue
-			}
+		for {
 			select {
-			case out <- hdr:
+			case raw, ok := <-rawCh:
+				if !ok {
+					return
+				}
+				hdr, err := mapHeader(raw)
+				if err != nil {
+					f.log.Error().Err(err).Msg("failed to parse subscribed header")
+					continue
+				}
+				select {
+				case out <- hdr:
+				case <-ctx.Done():
+					return
+				}
 			case <-ctx.Done():
 				return
 			}
@@ -182,7 +190,7 @@ func mapHeader(raw json.RawMessage) (*types.Header, error) {
 
 func mapBlobs(raw json.RawMessage, height uint64) ([]types.Blob, error) {
 	// Celestia returns null/empty for no blobs.
-	if len(raw) == 0 || string(raw) == "null" || string(raw) == "[]" {
+	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
 

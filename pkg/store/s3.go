@@ -86,6 +86,9 @@ type S3Store struct {
 	blobBuf   map[blobChunkKey][]types.Blob
 	headerBuf map[uint64][]*types.Header
 	commitBuf []commitEntry
+
+	nsMu    sync.Mutex // guards PutNamespace read-modify-write (separate from buffer mu)
+	flushMu sync.Mutex // serializes flush operations
 }
 
 // NewS3Store creates a new S3Store from the given config.
@@ -163,6 +166,7 @@ func newS3Store(client s3Client, bucket, prefix string, chunkSize uint64) *S3Sto
 }
 
 // SetMetrics sets the metrics recorder.
+// Must be called before any other method — not safe for concurrent use.
 func (s *S3Store) SetMetrics(m metrics.Recorder) {
 	s.metrics = m
 }
@@ -226,8 +230,8 @@ func (s *S3Store) PutHeader(ctx context.Context, header *types.Header) error {
 }
 
 func (s *S3Store) PutNamespace(ctx context.Context, ns types.Namespace) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.nsMu.Lock()
+	defer s.nsMu.Unlock()
 
 	key := s.key("meta", "namespaces.json")
 
@@ -537,7 +541,11 @@ func (s *S3Store) Close() error {
 // --- Flush ---
 
 // flush drains the write buffer to S3. Called at checkpoint boundaries.
+// Serialized by flushMu to prevent concurrent read-modify-write races on S3 chunk objects.
 func (s *S3Store) flush(ctx context.Context) error {
+	s.flushMu.Lock()
+	defer s.flushMu.Unlock()
+
 	s.mu.Lock()
 	blobBuf := s.blobBuf
 	headerBuf := s.headerBuf
@@ -649,7 +657,7 @@ func (s *S3Store) flushHeaderChunk(ctx context.Context, cs uint64, newHeaders []
 		return fmt.Errorf("read header chunk for merge: %w", err)
 	}
 
-	var merged []types.Header
+	merged := make([]types.Header, 0, len(newHeaders))
 	if existing != nil {
 		merged, err = decodeS3Headers(existing)
 		if err != nil {

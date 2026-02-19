@@ -52,6 +52,12 @@ func (b *Backfiller) Run(ctx context.Context, fromHeight, toHeight uint64) error
 			select {
 			case <-ticker.C:
 				done := processedHeights.Load()
+				if done == 0 {
+					b.log.Info().
+						Uint64("target", toHeight).
+						Msg("backfill progress: waiting for first batch")
+					continue
+				}
 				elapsed := time.Since(startTime)
 				pct := float64(done) / float64(totalHeights) * 100
 				rate := float64(done) / elapsed.Seconds()

@@ -14,15 +14,15 @@ Lightweight Celestia namespace indexer. Watches namespaces on the Celestia netwo
 ## Quick Start
 
 ```bash
-# Generate default config
+# Generate default config (writes config.yaml)
 apex init
 
 # Set auth token (DA node mode)
 export APEX_AUTH_TOKEN="your-token"
 
-# Edit apex.yaml: add namespaces, adjust URLs
+# Edit config.yaml: add namespaces, adjust URLs
 # Start indexing
-apex start --config apex.yaml
+apex start
 ```
 
 ## Build
@@ -46,7 +46,7 @@ just check          # tidy + lint + test + build
 
 ## Documentation
 
-- [Running Apex](docs/running.md) -- setup, configuration, Docker, CLI reference
+- [Running Apex](docs/running.md) -- setup, configuration, Docker, CLI
 
 ## License
 

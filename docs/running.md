@@ -24,7 +24,7 @@ Generate a default config file:
 
 ```bash
 apex init
-# Creates apex.yaml in the current directory
+# Creates config.yaml in the current directory
 ```
 
 ### Minimal Config (DA Node)
@@ -91,8 +91,8 @@ log:
 Validate a config without starting the server:
 
 ```bash
-apex config validate --config apex.yaml
-apex config show --config apex.yaml
+apex config validate --config config.yaml
+apex config show --config config.yaml
 ```
 
 ## Running
@@ -100,7 +100,9 @@ apex config show --config apex.yaml
 ### Binary
 
 ```bash
-apex start --config apex.yaml
+apex start
+# Or with explicit path:
+apex start --config /path/to/config.yaml
 ```
 
 ### Docker
@@ -109,9 +111,9 @@ apex start --config apex.yaml
 docker build -t apex .
 docker run -p 8080:8080 -p 9090:9090 -p 9091:9091 \
   -e APEX_AUTH_TOKEN="your-token" \
-  -v $(pwd)/apex.yaml:/config/apex.yaml \
+  -v $(pwd)/config.yaml:/config/config.yaml \
   -v $(pwd)/data:/data \
-  apex --config /config/apex.yaml
+  apex --config /config/config.yaml
 ```
 
 The image is based on `distroless/static` and runs as non-root (UID 65532).
@@ -119,14 +121,14 @@ The image is based on `distroless/static` and runs as non-root (UID 65532).
 ### just
 
 ```bash
-just run start --config apex.yaml
+just run start
 ```
 
 ## CLI Commands
 
 ```
 apex init                              Generate default config file
-apex start --config apex.yaml          Start the indexer
+apex start --config config.yaml          Start the indexer
 apex status [--addr http://...]        Check health endpoint
 apex version                           Print version
 

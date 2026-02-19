@@ -1,4 +1,4 @@
-package sync
+package syncer
 
 import (
 	"github.com/evstack/apex/pkg/fetch"
@@ -20,13 +20,23 @@ type Coordinator struct {
 type Option func(*Coordinator)
 
 // WithBatchSize sets the number of headers fetched per batch.
+// Values <= 0 are ignored.
 func WithBatchSize(n int) Option {
-	return func(c *Coordinator) { c.batchSize = n }
+	return func(c *Coordinator) {
+		if n > 0 {
+			c.batchSize = n
+		}
+	}
 }
 
 // WithConcurrency sets the number of concurrent fetch workers.
+// Values <= 0 are ignored.
 func WithConcurrency(n int) Option {
-	return func(c *Coordinator) { c.concurrency = n }
+	return func(c *Coordinator) {
+		if n > 0 {
+			c.concurrency = n
+		}
+	}
 }
 
 // WithStartHeight sets the height at which syncing begins.

@@ -9,16 +9,13 @@ linters:
     - misspell
     - bodyclose
     - prealloc
+  settings:
+    gocyclo:
+      min-complexity: 15
+  exclusions:
+    paths:
+      - vendor
 
 formatters:
   enable:
     - gofumpt
-
-issues:
-  exclude-dirs:
-    - vendor
-    - submit
-
-linters-settings:
-  gocyclo:
-    min-complexity: 15

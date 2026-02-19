@@ -5,11 +5,11 @@ ldflags := "-s -w -X main.version=" + version
 
 # Build the binary
 build:
-    go build -ldflags '{{ldflags}}' -o bin/apex ./cmd/apex
+    go build -trimpath -ldflags '{{ldflags}}' -o bin/apex ./cmd/apex
 
 # Run all tests with race detection
 test:
-    go test -race -count=1 ./...
+    go test -race -count=1 -timeout 5m ./...
 
 # Run linter
 lint:
@@ -31,5 +31,10 @@ clean:
 tidy:
     go mod tidy
 
+# Verify go.mod/go.sum are tidy (for CI)
+tidy-check:
+    go mod tidy
+    git diff --exit-code go.mod go.sum
+
 # Run all checks (CI equivalent)
-check: tidy lint test build
+check: tidy-check lint test build

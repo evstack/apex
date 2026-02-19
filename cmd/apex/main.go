@@ -95,7 +95,10 @@ func setupLogger(cfg config.LogConfig) {
 	}
 	zerolog.SetGlobalLevel(level)
 
-	if cfg.Format == "console" {
+	switch cfg.Format {
+	case "console":
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	default:
+		log.Logger = log.Output(os.Stdout)
 	}
 }

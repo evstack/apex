@@ -18,7 +18,7 @@ type Config struct {
 // DataSourceConfig configures the Celestia node connection.
 type DataSourceConfig struct {
 	CelestiaNodeURL string   `yaml:"celestia_node_url"`
-	AuthToken       string   `yaml:"auth_token"`
+	AuthToken       string   `yaml:"-"` // populated only via APEX_AUTH_TOKEN env var
 	Namespaces      []string `yaml:"namespaces"`
 }
 

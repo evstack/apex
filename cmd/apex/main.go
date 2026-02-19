@@ -21,32 +21,38 @@ func main() {
 }
 
 func rootCmd() *cobra.Command {
-	var cfgPath string
-
 	root := &cobra.Command{
 		Use:          "apex",
 		Short:        "Lightweight Celestia namespace indexer",
 		SilenceUsage: true,
 	}
 
-	root.PersistentFlags().StringVar(&cfgPath, "config", "config.yaml", "path to config file")
+	root.PersistentFlags().String("config", "config.yaml", "path to config file")
 
 	root.AddCommand(versionCmd())
-	root.AddCommand(initCmd(&cfgPath))
-	root.AddCommand(startCmd(&cfgPath))
+	root.AddCommand(initCmd())
+	root.AddCommand(startCmd())
 
 	return root
 }
 
-func initCmd(cfgPath *string) *cobra.Command {
+func configPath(cmd *cobra.Command) (string, error) {
+	return cmd.Flags().GetString("config")
+}
+
+func initCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
 		Short: "Generate a default config file",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			if err := config.Generate(*cfgPath); err != nil {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfgPath, err := configPath(cmd)
+			if err != nil {
 				return err
 			}
-			fmt.Printf("Config written to %s\n", *cfgPath)
+			if err := config.Generate(cfgPath); err != nil {
+				return err
+			}
+			fmt.Printf("Config written to %s\n", cfgPath)
 			return nil
 		},
 	}
@@ -62,12 +68,16 @@ func versionCmd() *cobra.Command {
 	}
 }
 
-func startCmd(cfgPath *string) *cobra.Command {
+func startCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "start",
 		Short: "Start the Apex indexer",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			cfg, err := config.Load(*cfgPath)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfgPath, err := configPath(cmd)
+			if err != nil {
+				return err
+			}
+			cfg, err := config.Load(cfgPath)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}

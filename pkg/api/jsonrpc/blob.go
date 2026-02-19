@@ -23,6 +23,11 @@ func (h *BlobHandler) Get(ctx context.Context, height uint64, namespace []byte, 
 	return h.svc.BlobGet(ctx, height, ns, commitment)
 }
 
+// GetByCommitment returns a blob matching the given commitment.
+func (h *BlobHandler) GetByCommitment(ctx context.Context, commitment []byte) (json.RawMessage, error) {
+	return h.svc.BlobGetByCommitment(ctx, commitment)
+}
+
 // GetAll returns all blobs for the given namespaces at the given height.
 func (h *BlobHandler) GetAll(ctx context.Context, height uint64, namespaces [][]byte) (json.RawMessage, error) {
 	nsList := make([]types.Namespace, len(namespaces))

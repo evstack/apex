@@ -239,6 +239,94 @@ func (x *GetAllResponse) GetBlobs() []*Blob {
 	return nil
 }
 
+type GetByCommitmentRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Commitment    []byte                 `protobuf:"bytes,1,opt,name=commitment,proto3" json:"commitment,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetByCommitmentRequest) Reset() {
+	*x = GetByCommitmentRequest{}
+	mi := &file_apex_v1_blob_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetByCommitmentRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetByCommitmentRequest) ProtoMessage() {}
+
+func (x *GetByCommitmentRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_apex_v1_blob_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetByCommitmentRequest.ProtoReflect.Descriptor instead.
+func (*GetByCommitmentRequest) Descriptor() ([]byte, []int) {
+	return file_apex_v1_blob_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GetByCommitmentRequest) GetCommitment() []byte {
+	if x != nil {
+		return x.Commitment
+	}
+	return nil
+}
+
+type GetByCommitmentResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Blob          *Blob                  `protobuf:"bytes,1,opt,name=blob,proto3" json:"blob,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetByCommitmentResponse) Reset() {
+	*x = GetByCommitmentResponse{}
+	mi := &file_apex_v1_blob_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetByCommitmentResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetByCommitmentResponse) ProtoMessage() {}
+
+func (x *GetByCommitmentResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_apex_v1_blob_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetByCommitmentResponse.ProtoReflect.Descriptor instead.
+func (*GetByCommitmentResponse) Descriptor() ([]byte, []int) {
+	return file_apex_v1_blob_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetByCommitmentResponse) GetBlob() *Blob {
+	if x != nil {
+		return x.Blob
+	}
+	return nil
+}
+
 type BlobServiceSubscribeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Namespace     []byte                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
@@ -248,7 +336,7 @@ type BlobServiceSubscribeRequest struct {
 
 func (x *BlobServiceSubscribeRequest) Reset() {
 	*x = BlobServiceSubscribeRequest{}
-	mi := &file_apex_v1_blob_proto_msgTypes[4]
+	mi := &file_apex_v1_blob_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -260,7 +348,7 @@ func (x *BlobServiceSubscribeRequest) String() string {
 func (*BlobServiceSubscribeRequest) ProtoMessage() {}
 
 func (x *BlobServiceSubscribeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_apex_v1_blob_proto_msgTypes[4]
+	mi := &file_apex_v1_blob_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -273,7 +361,7 @@ func (x *BlobServiceSubscribeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlobServiceSubscribeRequest.ProtoReflect.Descriptor instead.
 func (*BlobServiceSubscribeRequest) Descriptor() ([]byte, []int) {
-	return file_apex_v1_blob_proto_rawDescGZIP(), []int{4}
+	return file_apex_v1_blob_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *BlobServiceSubscribeRequest) GetNamespace() []byte {
@@ -293,7 +381,7 @@ type BlobServiceSubscribeResponse struct {
 
 func (x *BlobServiceSubscribeResponse) Reset() {
 	*x = BlobServiceSubscribeResponse{}
-	mi := &file_apex_v1_blob_proto_msgTypes[5]
+	mi := &file_apex_v1_blob_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -305,7 +393,7 @@ func (x *BlobServiceSubscribeResponse) String() string {
 func (*BlobServiceSubscribeResponse) ProtoMessage() {}
 
 func (x *BlobServiceSubscribeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_apex_v1_blob_proto_msgTypes[5]
+	mi := &file_apex_v1_blob_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -318,7 +406,7 @@ func (x *BlobServiceSubscribeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlobServiceSubscribeResponse.ProtoReflect.Descriptor instead.
 func (*BlobServiceSubscribeResponse) Descriptor() ([]byte, []int) {
-	return file_apex_v1_blob_proto_rawDescGZIP(), []int{5}
+	return file_apex_v1_blob_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *BlobServiceSubscribeResponse) GetHeight() uint64 {
@@ -357,15 +445,22 @@ const file_apex_v1_blob_proto_rawDesc = "" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x16\n" +
 	"\x06offset\x18\x04 \x01(\x05R\x06offset\"5\n" +
 	"\x0eGetAllResponse\x12#\n" +
-	"\x05blobs\x18\x01 \x03(\v2\r.apex.v1.BlobR\x05blobs\";\n" +
+	"\x05blobs\x18\x01 \x03(\v2\r.apex.v1.BlobR\x05blobs\"8\n" +
+	"\x16GetByCommitmentRequest\x12\x1e\n" +
+	"\n" +
+	"commitment\x18\x01 \x01(\fR\n" +
+	"commitment\"<\n" +
+	"\x17GetByCommitmentResponse\x12!\n" +
+	"\x04blob\x18\x01 \x01(\v2\r.apex.v1.BlobR\x04blob\";\n" +
 	"\x1bBlobServiceSubscribeRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\fR\tnamespace\"[\n" +
 	"\x1cBlobServiceSubscribeResponse\x12\x16\n" +
 	"\x06height\x18\x01 \x01(\x04R\x06height\x12#\n" +
-	"\x05blobs\x18\x02 \x03(\v2\r.apex.v1.BlobR\x05blobs2\xd6\x01\n" +
+	"\x05blobs\x18\x02 \x03(\v2\r.apex.v1.BlobR\x05blobs2\xac\x02\n" +
 	"\vBlobService\x120\n" +
 	"\x03Get\x12\x13.apex.v1.GetRequest\x1a\x14.apex.v1.GetResponse\x129\n" +
-	"\x06GetAll\x12\x16.apex.v1.GetAllRequest\x1a\x17.apex.v1.GetAllResponse\x12Z\n" +
+	"\x06GetAll\x12\x16.apex.v1.GetAllRequest\x1a\x17.apex.v1.GetAllResponse\x12T\n" +
+	"\x0fGetByCommitment\x12\x1f.apex.v1.GetByCommitmentRequest\x1a .apex.v1.GetByCommitmentResponse\x12Z\n" +
 	"\tSubscribe\x12$.apex.v1.BlobServiceSubscribeRequest\x1a%.apex.v1.BlobServiceSubscribeResponse0\x01B.Z,github.com/evstack/apex/pkg/api/grpc/gen;genb\x06proto3"
 
 var (
@@ -380,31 +475,36 @@ func file_apex_v1_blob_proto_rawDescGZIP() []byte {
 	return file_apex_v1_blob_proto_rawDescData
 }
 
-var file_apex_v1_blob_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_apex_v1_blob_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_apex_v1_blob_proto_goTypes = []any{
 	(*GetRequest)(nil),                   // 0: apex.v1.GetRequest
 	(*GetResponse)(nil),                  // 1: apex.v1.GetResponse
 	(*GetAllRequest)(nil),                // 2: apex.v1.GetAllRequest
 	(*GetAllResponse)(nil),               // 3: apex.v1.GetAllResponse
-	(*BlobServiceSubscribeRequest)(nil),  // 4: apex.v1.BlobServiceSubscribeRequest
-	(*BlobServiceSubscribeResponse)(nil), // 5: apex.v1.BlobServiceSubscribeResponse
-	(*Blob)(nil),                         // 6: apex.v1.Blob
+	(*GetByCommitmentRequest)(nil),       // 4: apex.v1.GetByCommitmentRequest
+	(*GetByCommitmentResponse)(nil),      // 5: apex.v1.GetByCommitmentResponse
+	(*BlobServiceSubscribeRequest)(nil),  // 6: apex.v1.BlobServiceSubscribeRequest
+	(*BlobServiceSubscribeResponse)(nil), // 7: apex.v1.BlobServiceSubscribeResponse
+	(*Blob)(nil),                         // 8: apex.v1.Blob
 }
 var file_apex_v1_blob_proto_depIdxs = []int32{
-	6, // 0: apex.v1.GetResponse.blob:type_name -> apex.v1.Blob
-	6, // 1: apex.v1.GetAllResponse.blobs:type_name -> apex.v1.Blob
-	6, // 2: apex.v1.BlobServiceSubscribeResponse.blobs:type_name -> apex.v1.Blob
-	0, // 3: apex.v1.BlobService.Get:input_type -> apex.v1.GetRequest
-	2, // 4: apex.v1.BlobService.GetAll:input_type -> apex.v1.GetAllRequest
-	4, // 5: apex.v1.BlobService.Subscribe:input_type -> apex.v1.BlobServiceSubscribeRequest
-	1, // 6: apex.v1.BlobService.Get:output_type -> apex.v1.GetResponse
-	3, // 7: apex.v1.BlobService.GetAll:output_type -> apex.v1.GetAllResponse
-	5, // 8: apex.v1.BlobService.Subscribe:output_type -> apex.v1.BlobServiceSubscribeResponse
-	6, // [6:9] is the sub-list for method output_type
-	3, // [3:6] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	8, // 0: apex.v1.GetResponse.blob:type_name -> apex.v1.Blob
+	8, // 1: apex.v1.GetAllResponse.blobs:type_name -> apex.v1.Blob
+	8, // 2: apex.v1.GetByCommitmentResponse.blob:type_name -> apex.v1.Blob
+	8, // 3: apex.v1.BlobServiceSubscribeResponse.blobs:type_name -> apex.v1.Blob
+	0, // 4: apex.v1.BlobService.Get:input_type -> apex.v1.GetRequest
+	2, // 5: apex.v1.BlobService.GetAll:input_type -> apex.v1.GetAllRequest
+	4, // 6: apex.v1.BlobService.GetByCommitment:input_type -> apex.v1.GetByCommitmentRequest
+	6, // 7: apex.v1.BlobService.Subscribe:input_type -> apex.v1.BlobServiceSubscribeRequest
+	1, // 8: apex.v1.BlobService.Get:output_type -> apex.v1.GetResponse
+	3, // 9: apex.v1.BlobService.GetAll:output_type -> apex.v1.GetAllResponse
+	5, // 10: apex.v1.BlobService.GetByCommitment:output_type -> apex.v1.GetByCommitmentResponse
+	7, // 11: apex.v1.BlobService.Subscribe:output_type -> apex.v1.BlobServiceSubscribeResponse
+	8, // [8:12] is the sub-list for method output_type
+	4, // [4:8] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_apex_v1_blob_proto_init() }
@@ -419,7 +519,7 @@ func file_apex_v1_blob_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_apex_v1_blob_proto_rawDesc), len(file_apex_v1_blob_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

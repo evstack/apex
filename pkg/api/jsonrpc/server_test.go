@@ -59,6 +59,17 @@ func (m *mockStore) GetBlobs(_ context.Context, ns types.Namespace, startHeight,
 	return result, nil
 }
 
+func (m *mockStore) GetBlobByCommitment(_ context.Context, commitment []byte) (*types.Blob, error) {
+	for _, blobs := range m.blobs {
+		for i := range blobs {
+			if string(blobs[i].Commitment) == string(commitment) {
+				return &blobs[i], nil
+			}
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
 func (m *mockStore) PutHeader(_ context.Context, h *types.Header) error {
 	m.headers[h.Height] = h
 	return nil

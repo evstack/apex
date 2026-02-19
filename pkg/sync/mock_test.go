@@ -80,6 +80,17 @@ func (m *mockStore) GetBlobs(_ context.Context, ns types.Namespace, startHeight,
 	return result, nil
 }
 
+func (m *mockStore) GetBlobByCommitment(_ context.Context, commitment []byte) (*types.Blob, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.blobs {
+		if string(m.blobs[i].Commitment) == string(commitment) {
+			return &m.blobs[i], nil
+		}
+	}
+	return nil, store.ErrNotFound
+}
+
 func (m *mockStore) PutNamespace(_ context.Context, ns types.Namespace) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -20,6 +20,11 @@ type Store interface {
 	// limit=0 means no limit; offset=0 means no offset.
 	GetBlobs(ctx context.Context, ns types.Namespace, startHeight, endHeight uint64, limit, offset int) ([]types.Blob, error)
 
+	// GetBlobByCommitment returns a blob matching the given commitment.
+	// Commitment is cryptographically unique across the chain, so no
+	// namespace or height is required.
+	GetBlobByCommitment(ctx context.Context, commitment []byte) (*types.Blob, error)
+
 	PutHeader(ctx context.Context, header *types.Header) error
 	GetHeader(ctx context.Context, height uint64) (*types.Header, error)
 

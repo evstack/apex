@@ -92,35 +92,54 @@ func configureSQLite(db *sql.DB) error {
 	return nil
 }
 
+// migrationStep defines a single schema migration.
+type migrationStep struct {
+	version int
+	file    string
+}
+
+// allMigrations lists every migration in order. Add new entries here.
+var allMigrations = []migrationStep{
+	{version: 1, file: "migrations/001_init.sql"},
+	{version: 2, file: "migrations/002_commitment_index.sql"},
+}
+
 func (s *SQLiteStore) migrate() error {
 	var version int
 	if err := s.writer.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return fmt.Errorf("read user_version: %w", err)
 	}
 
-	if version >= 1 {
-		return nil
+	for _, m := range allMigrations {
+		if version >= m.version {
+			continue
+		}
+
+		ddl, err := migrations.ReadFile(m.file)
+		if err != nil {
+			return fmt.Errorf("read migration %d: %w", m.version, err)
+		}
+
+		tx, err := s.writer.Begin()
+		if err != nil {
+			return fmt.Errorf("begin migration %d tx: %w", m.version, err)
+		}
+		defer tx.Rollback() //nolint:errcheck
+
+		if _, err := tx.Exec(string(ddl)); err != nil {
+			return fmt.Errorf("exec migration %d: %w", m.version, err)
+		}
+		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", m.version)); err != nil {
+			return fmt.Errorf("set user_version to %d: %w", m.version, err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %d: %w", m.version, err)
+		}
+		version = m.version
 	}
 
-	ddl, err := migrations.ReadFile("migrations/001_init.sql")
-	if err != nil {
-		return fmt.Errorf("read migration: %w", err)
-	}
-
-	tx, err := s.writer.Begin()
-	if err != nil {
-		return fmt.Errorf("begin migration tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	if _, err := tx.Exec(string(ddl)); err != nil {
-		return fmt.Errorf("exec migration: %w", err)
-	}
-	if _, err := tx.Exec("PRAGMA user_version = 1"); err != nil {
-		return fmt.Errorf("set user_version: %w", err)
-	}
-
-	return tx.Commit()
+	return nil
 }
 
 func (s *SQLiteStore) PutBlobs(ctx context.Context, blobs []types.Blob) error {
@@ -194,6 +213,16 @@ func (s *SQLiteStore) GetBlobs(ctx context.Context, ns types.Namespace, startHei
 		blobs = append(blobs, b)
 	}
 	return blobs, rows.Err()
+}
+
+func (s *SQLiteStore) GetBlobByCommitment(ctx context.Context, commitment []byte) (*types.Blob, error) {
+	start := time.Now()
+	defer func() { s.metrics.ObserveStoreQueryDuration("GetBlobByCommitment", time.Since(start)) }()
+
+	row := s.reader.QueryRowContext(ctx,
+		`SELECT height, namespace, commitment, data, share_version, signer, blob_index
+		 FROM blobs WHERE commitment = ? LIMIT 1`, commitment)
+	return scanBlob(row)
 }
 
 func (s *SQLiteStore) PutHeader(ctx context.Context, header *types.Header) error {

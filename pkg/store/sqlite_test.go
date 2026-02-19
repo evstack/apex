@@ -131,6 +131,44 @@ func TestGetBlobNotFound(t *testing.T) {
 	}
 }
 
+func TestGetBlobByCommitment(t *testing.T) {
+	s := openTestDB(t)
+	ctx := context.Background()
+	ns := testNamespace(1)
+
+	blobs := []types.Blob{
+		{Height: 10, Namespace: ns, Commitment: []byte("c1"), Data: []byte("d1"), ShareVersion: 0, Index: 0},
+		{Height: 10, Namespace: ns, Commitment: []byte("c2"), Data: []byte("d2"), ShareVersion: 0, Index: 1},
+	}
+	if err := s.PutBlobs(ctx, blobs); err != nil {
+		t.Fatalf("PutBlobs: %v", err)
+	}
+
+	got, err := s.GetBlobByCommitment(ctx, []byte("c2"))
+	if err != nil {
+		t.Fatalf("GetBlobByCommitment: %v", err)
+	}
+	if string(got.Data) != "d2" {
+		t.Errorf("Data = %q, want %q", got.Data, "d2")
+	}
+	if got.Height != 10 {
+		t.Errorf("Height = %d, want 10", got.Height)
+	}
+	if got.Index != 1 {
+		t.Errorf("Index = %d, want 1", got.Index)
+	}
+}
+
+func TestGetBlobByCommitmentNotFound(t *testing.T) {
+	s := openTestDB(t)
+	ctx := context.Background()
+
+	_, err := s.GetBlobByCommitment(ctx, []byte("nonexistent"))
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
 func TestPutBlobsIdempotent(t *testing.T) {
 	s := openTestDB(t)
 	ctx := context.Background()

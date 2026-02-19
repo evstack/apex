@@ -53,6 +53,16 @@ func (s *Service) BlobGet(ctx context.Context, height uint64, namespace types.Na
 	return nil, store.ErrNotFound
 }
 
+// BlobGetByCommitment returns a blob matching the given commitment as JSON.
+// No height or namespace required — commitment is cryptographically unique.
+func (s *Service) BlobGetByCommitment(ctx context.Context, commitment []byte) (json.RawMessage, error) {
+	b, err := s.store.GetBlobByCommitment(ctx, commitment)
+	if err != nil {
+		return nil, fmt.Errorf("get blob by commitment: %w", err)
+	}
+	return MarshalBlob(b), nil
+}
+
 // BlobGetAll returns all blobs for the given namespaces at the given height.
 // limit=0 means no limit; offset=0 means no offset.
 // Pagination is applied to the aggregate result across all namespaces.

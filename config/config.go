@@ -17,9 +17,13 @@ type Config struct {
 	Log          LogConfig          `yaml:"log"`
 }
 
-// DataSourceConfig configures the Celestia node connection.
+// DataSourceConfig configures the Celestia data source.
+// Type selects the backend: "node" (default) uses a Celestia DA node,
+// "app" uses a celestia-app consensus node via CometBFT RPC.
 type DataSourceConfig struct {
+	Type            string   `yaml:"type"` // "node" (default) or "app"
 	CelestiaNodeURL string   `yaml:"celestia_node_url"`
+	CelestiaAppURL  string   `yaml:"celestia_app_url"`
 	AuthToken       string   `yaml:"-"` // populated only via APEX_AUTH_TOKEN env var
 	Namespaces      []string `yaml:"namespaces"`
 }
@@ -63,6 +67,7 @@ type LogConfig struct {
 func DefaultConfig() Config {
 	return Config{
 		DataSource: DataSourceConfig{
+			Type:            "node",
 			CelestiaNodeURL: "http://localhost:26658",
 		},
 		Storage: StorageConfig{

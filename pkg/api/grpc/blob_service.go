@@ -3,6 +3,7 @@ package grpcapi
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"google.golang.org/grpc"
@@ -39,6 +40,22 @@ func (s *BlobServiceServer) Get(ctx context.Context, req *pb.GetRequest) (*pb.Ge
 	}
 
 	return nil, status.Error(codes.NotFound, store.ErrNotFound.Error())
+}
+
+func (s *BlobServiceServer) GetByCommitment(ctx context.Context, req *pb.GetByCommitmentRequest) (*pb.GetByCommitmentResponse, error) {
+	if len(req.Commitment) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "commitment is required")
+	}
+
+	b, err := s.svc.Store().GetBlobByCommitment(ctx, req.Commitment)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, status.Error(codes.NotFound, store.ErrNotFound.Error())
+		}
+		return nil, status.Errorf(codes.Internal, "get blob by commitment: %v", err)
+	}
+
+	return &pb.GetByCommitmentResponse{Blob: blobToProto(b)}, nil
 }
 
 func (s *BlobServiceServer) GetAll(ctx context.Context, req *pb.GetAllRequest) (*pb.GetAllResponse, error) {

@@ -91,18 +91,16 @@ func blobListCmd() *cobra.Command {
 	return cmd
 }
 
-func printJSON(cmd *cobra.Command, raw json.RawMessage) error {
-	format, _ := cmd.Flags().GetString("format")
-	if format == "table" {
-		// For blob data, table format just pretty-prints the JSON since blob
-		// fields are dynamic.
-		return prettyPrintJSON(raw)
-	}
+func printJSON(_ *cobra.Command, raw json.RawMessage) error {
 	return prettyPrintJSON(raw)
 }
 
 func prettyPrintJSON(raw json.RawMessage) error {
+	var out any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return err
+	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	return enc.Encode(raw)
+	return enc.Encode(out)
 }

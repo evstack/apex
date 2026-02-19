@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -67,8 +68,8 @@ type PromRecorder struct {
 	info             *prometheus.GaugeVec
 
 	// cached for lag calculation
-	lastLatest  uint64
-	lastNetwork uint64
+	lastLatest  atomic.Uint64
+	lastNetwork atomic.Uint64
 }
 
 // NewPromRecorder creates a PromRecorder and registers metrics with the
@@ -166,22 +167,34 @@ func (r *PromRecorder) SetSyncState(state string) {
 
 func (r *PromRecorder) SetLatestHeight(h uint64) {
 	r.latestHeight.Set(float64(h))
-	r.lastLatest = h
-	r.syncLag.Set(float64(r.lastNetwork) - float64(h))
+	r.lastLatest.Store(h)
+	if lag := float64(r.lastNetwork.Load()) - float64(h); lag > 0 {
+		r.syncLag.Set(lag)
+	} else {
+		r.syncLag.Set(0)
+	}
 }
 
 func (r *PromRecorder) SetNetworkHeight(h uint64) {
 	r.networkHeight.Set(float64(h))
-	r.lastNetwork = h
-	r.syncLag.Set(float64(h) - float64(r.lastLatest))
+	r.lastNetwork.Store(h)
+	if lag := float64(h) - float64(r.lastLatest.Load()); lag > 0 {
+		r.syncLag.Set(lag)
+	} else {
+		r.syncLag.Set(0)
+	}
 }
 
 func (r *PromRecorder) IncBlobsProcessed(n int) {
-	r.blobsProcessed.Add(float64(n))
+	if n > 0 {
+		r.blobsProcessed.Add(float64(n))
+	}
 }
 
 func (r *PromRecorder) IncHeadersProcessed(n int) {
-	r.headersProcessed.Add(float64(n))
+	if n > 0 {
+		r.headersProcessed.Add(float64(n))
+	}
 }
 
 func (r *PromRecorder) ObserveBatchDuration(d time.Duration) {

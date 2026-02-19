@@ -34,7 +34,7 @@ func statusCmd() *cobra.Command {
 			}
 
 			// JSON output (pretty-printed).
-			var out json.RawMessage
+			var out any
 			if err := json.Unmarshal(raw, &out); err != nil {
 				return fmt.Errorf("decode status: %w", err)
 			}

@@ -15,6 +15,8 @@ FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=builder /apex /apex
 
+USER 65532:65532
+
 EXPOSE 8080 9090 9091
 
 ENTRYPOINT ["/apex", "start"]

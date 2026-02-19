@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -92,7 +93,7 @@ func (h *HealthHandler) handleReady(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 	_, err := h.store.GetSyncState(ctx)
-	storeOK := err == nil || err == store.ErrNotFound
+	storeOK := err == nil || errors.Is(err, store.ErrNotFound)
 
 	ready := hs.Healthy && storeOK
 

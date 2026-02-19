@@ -6,6 +6,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/evstack/apex/pkg/metrics"
 	"github.com/evstack/apex/pkg/types"
 )
 
@@ -35,6 +36,7 @@ type Notifier struct {
 	subscribers map[uint64]*Subscription
 	nextID      atomic.Uint64
 	bufferSize  int
+	metrics     metrics.Recorder
 	log         zerolog.Logger
 }
 
@@ -46,8 +48,14 @@ func NewNotifier(bufferSize int, log zerolog.Logger) *Notifier {
 	return &Notifier{
 		subscribers: make(map[uint64]*Subscription),
 		bufferSize:  bufferSize,
+		metrics:     metrics.Nop(),
 		log:         log.With().Str("component", "notifier").Logger(),
 	}
+}
+
+// SetMetrics sets the metrics recorder for the notifier.
+func (n *Notifier) SetMetrics(m metrics.Recorder) {
+	n.metrics = m
 }
 
 // Subscribe creates a new subscription. If namespaces is empty, all blobs are
@@ -70,6 +78,7 @@ func (n *Notifier) Subscribe(namespaces []types.Namespace) *Subscription {
 	n.mu.Unlock()
 
 	n.log.Debug().Uint64("sub_id", id).Int("namespaces", len(namespaces)).Msg("new subscription")
+	n.metrics.SetActiveSubscriptions(len(n.subscribers))
 	return sub
 }
 
@@ -80,6 +89,7 @@ func (n *Notifier) Unsubscribe(sub *Subscription) {
 		delete(n.subscribers, sub.id)
 		close(sub.ch)
 	}
+	n.metrics.SetActiveSubscriptions(len(n.subscribers))
 	n.mu.Unlock()
 }
 
@@ -129,6 +139,7 @@ func (n *Notifier) Publish(event HeightEvent) {
 				Uint64("sub_id", sub.id).
 				Uint64("height", event.Height).
 				Msg("subscriber buffer full, event dropped")
+			n.metrics.IncEventsDropped()
 			// Reset lastHeight so next delivery triggers a gap warning.
 			sub.lastHeight = 0
 		}

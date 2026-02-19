@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/evstack/apex/pkg/metrics"
 	"github.com/evstack/apex/pkg/types"
 
 	_ "modernc.org/sqlite"
@@ -22,8 +23,9 @@ var migrations embed.FS
 // The writer is limited to a single connection (WAL single-writer constraint),
 // while the reader pool allows concurrent API reads.
 type SQLiteStore struct {
-	writer *sql.DB
-	reader *sql.DB
+	writer  *sql.DB
+	reader  *sql.DB
+	metrics metrics.Recorder
 }
 
 // maxReadConns is the upper bound for the read connection pool.
@@ -63,13 +65,18 @@ func Open(path string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("configure reader: %w", err)
 	}
 
-	s := &SQLiteStore{writer: writer, reader: reader}
+	s := &SQLiteStore{writer: writer, reader: reader, metrics: metrics.Nop()}
 	if err := s.migrate(); err != nil {
 		_ = writer.Close()
 		_ = reader.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return s, nil
+}
+
+// SetMetrics sets the metrics recorder for the store.
+func (s *SQLiteStore) SetMetrics(m metrics.Recorder) {
+	s.metrics = m
 }
 
 func configureSQLite(db *sql.DB) error {
@@ -120,6 +127,8 @@ func (s *SQLiteStore) PutBlobs(ctx context.Context, blobs []types.Blob) error {
 	if len(blobs) == 0 {
 		return nil
 	}
+	start := time.Now()
+	defer func() { s.metrics.ObserveStoreQueryDuration("PutBlobs", time.Since(start)) }()
 
 	tx, err := s.writer.BeginTx(ctx, nil)
 	if err != nil {
@@ -157,6 +166,9 @@ func (s *SQLiteStore) GetBlob(ctx context.Context, ns types.Namespace, height ui
 }
 
 func (s *SQLiteStore) GetBlobs(ctx context.Context, ns types.Namespace, startHeight, endHeight uint64, limit, offset int) ([]types.Blob, error) {
+	start := time.Now()
+	defer func() { s.metrics.ObserveStoreQueryDuration("GetBlobs", time.Since(start)) }()
+
 	query := `SELECT height, namespace, commitment, data, share_version, signer, blob_index
 		 FROM blobs WHERE namespace = ? AND height >= ? AND height <= ?
 		 ORDER BY height, blob_index`
@@ -185,6 +197,9 @@ func (s *SQLiteStore) GetBlobs(ctx context.Context, ns types.Namespace, startHei
 }
 
 func (s *SQLiteStore) PutHeader(ctx context.Context, header *types.Header) error {
+	start := time.Now()
+	defer func() { s.metrics.ObserveStoreQueryDuration("PutHeader", time.Since(start)) }()
+
 	_, err := s.writer.ExecContext(ctx,
 		`INSERT OR IGNORE INTO headers (height, hash, data_hash, time_ns, raw_header)
 		 VALUES (?, ?, ?, ?, ?)`,
@@ -196,6 +211,9 @@ func (s *SQLiteStore) PutHeader(ctx context.Context, header *types.Header) error
 }
 
 func (s *SQLiteStore) GetHeader(ctx context.Context, height uint64) (*types.Header, error) {
+	start := time.Now()
+	defer func() { s.metrics.ObserveStoreQueryDuration("GetHeader", time.Since(start)) }()
+
 	var h types.Header
 	var timeNs int64
 	err := s.reader.QueryRowContext(ctx,
@@ -244,6 +262,9 @@ func (s *SQLiteStore) GetNamespaces(ctx context.Context) ([]types.Namespace, err
 }
 
 func (s *SQLiteStore) GetSyncState(ctx context.Context) (*types.SyncStatus, error) {
+	start := time.Now()
+	defer func() { s.metrics.ObserveStoreQueryDuration("GetSyncState", time.Since(start)) }()
+
 	var state int
 	var latestHeight, networkHeight uint64
 	err := s.reader.QueryRowContext(ctx,

@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/evstack/apex/pkg/fetch"
+	"github.com/evstack/apex/pkg/metrics"
 	"github.com/evstack/apex/pkg/store"
 	"github.com/evstack/apex/pkg/types"
 )
@@ -21,15 +22,18 @@ type HeightObserver func(height uint64, header *types.Header, blobs []types.Blob
 
 // Coordinator manages the sync lifecycle between a data fetcher and a store.
 type Coordinator struct {
-	store       store.Store
-	fetcher     fetch.DataFetcher
-	state       types.SyncState
-	stateMu     sync.RWMutex
-	batchSize   int
-	concurrency int
-	startHeight uint64
-	observer    HeightObserver
-	log         zerolog.Logger
+	store         store.Store
+	fetcher       fetch.DataFetcher
+	state         types.SyncState
+	latestHeight  uint64
+	networkHeight uint64
+	stateMu       sync.RWMutex
+	batchSize     int
+	concurrency   int
+	startHeight   uint64
+	observer      HeightObserver
+	metrics       metrics.Recorder
+	log           zerolog.Logger
 }
 
 // Option configures a Coordinator.
@@ -70,6 +74,11 @@ func WithObserver(obs HeightObserver) Option {
 	return func(c *Coordinator) { c.observer = obs }
 }
 
+// WithMetrics sets the metrics recorder for the coordinator.
+func WithMetrics(m metrics.Recorder) Option {
+	return func(c *Coordinator) { c.metrics = m }
+}
+
 // New creates a Coordinator with the given store, fetcher, and options.
 func New(s store.Store, f fetch.DataFetcher, opts ...Option) *Coordinator {
 	coord := &Coordinator{
@@ -78,6 +87,7 @@ func New(s store.Store, f fetch.DataFetcher, opts ...Option) *Coordinator {
 		state:       types.Initializing,
 		batchSize:   64,
 		concurrency: 4,
+		metrics:     metrics.Nop(),
 		log:         zerolog.Nop(),
 	}
 	for _, opt := range opts {
@@ -91,7 +101,9 @@ func (c *Coordinator) Status() types.SyncStatus {
 	c.stateMu.RLock()
 	defer c.stateMu.RUnlock()
 	return types.SyncStatus{
-		State: c.state,
+		State:         c.state,
+		LatestHeight:  c.latestHeight,
+		NetworkHeight: c.networkHeight,
 	}
 }
 
@@ -99,6 +111,21 @@ func (c *Coordinator) setState(s types.SyncState) {
 	c.stateMu.Lock()
 	c.state = s
 	c.stateMu.Unlock()
+	c.metrics.SetSyncState(s.String())
+}
+
+func (c *Coordinator) setLatestHeight(h uint64) {
+	c.stateMu.Lock()
+	c.latestHeight = h
+	c.stateMu.Unlock()
+	c.metrics.SetLatestHeight(h)
+}
+
+func (c *Coordinator) setNetworkHeight(h uint64) {
+	c.stateMu.Lock()
+	c.networkHeight = h
+	c.stateMu.Unlock()
+	c.metrics.SetNetworkHeight(h)
 }
 
 // Run executes the sync lifecycle: initialize -> backfill -> stream.
@@ -110,6 +137,10 @@ func (c *Coordinator) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("initialize: %w", err)
 		}
+		c.setNetworkHeight(networkHeight)
+		if fromHeight > 1 {
+			c.setLatestHeight(fromHeight - 1)
+		}
 
 		if fromHeight <= networkHeight {
 			c.setState(types.Backfilling)
@@ -118,17 +149,28 @@ func (c *Coordinator) Run(ctx context.Context) error {
 				Uint64("to", networkHeight).
 				Msg("starting backfill")
 
+			// Wrap the user observer to also track latest height and metrics.
+			wrappedObserver := func(height uint64, header *types.Header, blobs []types.Blob) {
+				c.setLatestHeight(height)
+				c.metrics.IncHeadersProcessed(1)
+				c.metrics.IncBlobsProcessed(len(blobs))
+				if c.observer != nil {
+					c.observer(height, header, blobs)
+				}
+			}
+
 			bf := &Backfiller{
 				store:       c.store,
 				fetcher:     c.fetcher,
 				batchSize:   c.batchSize,
 				concurrency: c.concurrency,
-				observer:    c.observer,
+				observer:    wrappedObserver,
 				log:         c.log.With().Str("component", "backfiller").Logger(),
 			}
 			if err := bf.Run(ctx, fromHeight, networkHeight); err != nil {
 				return fmt.Errorf("backfill: %w", err)
 			}
+			c.setLatestHeight(networkHeight)
 			c.log.Info().Uint64("height", networkHeight).Msg("backfill complete")
 		}
 
@@ -136,10 +178,18 @@ func (c *Coordinator) Run(ctx context.Context) error {
 		c.log.Info().Msg("entering streaming mode")
 
 		sm := &SubscriptionManager{
-			store:    c.store,
-			fetcher:  c.fetcher,
-			observer: c.observer,
-			log:      c.log.With().Str("component", "subscription").Logger(),
+			store:   c.store,
+			fetcher: c.fetcher,
+			observer: func(height uint64, header *types.Header, blobs []types.Blob) {
+				c.setLatestHeight(height)
+				c.setNetworkHeight(height)
+				c.metrics.IncHeadersProcessed(1)
+				c.metrics.IncBlobsProcessed(len(blobs))
+				if c.observer != nil {
+					c.observer(height, header, blobs)
+				}
+			},
+			log: c.log.With().Str("component", "subscription").Logger(),
 		}
 		err = sm.Run(ctx)
 		if errors.Is(err, ErrGapDetected) {

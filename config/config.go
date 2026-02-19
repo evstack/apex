@@ -13,6 +13,7 @@ type Config struct {
 	RPC          RPCConfig          `yaml:"rpc"`
 	Sync         SyncConfig         `yaml:"sync"`
 	Subscription SubscriptionConfig `yaml:"subscription"`
+	Metrics      MetricsConfig      `yaml:"metrics"`
 	Log          LogConfig          `yaml:"log"`
 }
 
@@ -46,6 +47,12 @@ type SubscriptionConfig struct {
 	BufferSize int `yaml:"buffer_size"`
 }
 
+// MetricsConfig configures Prometheus metrics.
+type MetricsConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	ListenAddr string `yaml:"listen_addr"`
+}
+
 // LogConfig configures logging.
 type LogConfig struct {
 	Level  string `yaml:"level"`
@@ -71,6 +78,10 @@ func DefaultConfig() Config {
 		},
 		Subscription: SubscriptionConfig{
 			BufferSize: 64,
+		},
+		Metrics: MetricsConfig{
+			Enabled:    true,
+			ListenAddr: ":9091",
 		},
 		Log: LogConfig{
 			Level:  "info",

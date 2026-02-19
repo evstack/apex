@@ -14,9 +14,10 @@ import (
 
 // SubscriptionManager processes new headers from a live subscription.
 type SubscriptionManager struct {
-	store   store.Store
-	fetcher fetch.DataFetcher
-	log     zerolog.Logger
+	store    store.Store
+	fetcher  fetch.DataFetcher
+	observer HeightObserver
+	log      zerolog.Logger
 }
 
 // Run subscribes to new headers and processes them sequentially.
@@ -80,8 +81,10 @@ func (sm *SubscriptionManager) processHeader(ctx context.Context, hdr *types.Hea
 		return fmt.Errorf("put header: %w", err)
 	}
 
+	var blobs []types.Blob
 	if len(namespaces) > 0 {
-		blobs, err := sm.fetcher.GetBlobs(ctx, hdr.Height, namespaces)
+		var err error
+		blobs, err = sm.fetcher.GetBlobs(ctx, hdr.Height, namespaces)
 		if err != nil {
 			return fmt.Errorf("get blobs: %w", err)
 		}
@@ -98,6 +101,10 @@ func (sm *SubscriptionManager) processHeader(ctx context.Context, hdr *types.Hea
 		NetworkHeight: networkHeight,
 	}); err != nil {
 		return fmt.Errorf("set sync state: %w", err)
+	}
+
+	if sm.observer != nil {
+		sm.observer(hdr.Height, hdr, blobs)
 	}
 
 	sm.log.Debug().Uint64("height", hdr.Height).Msg("processed header")

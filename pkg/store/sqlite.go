@@ -17,48 +17,72 @@ import (
 var migrations embed.FS
 
 // SQLiteStore implements Store using modernc.org/sqlite (CGo-free).
+// It maintains separate read and write connection pools to the same database.
+// The writer is limited to a single connection (WAL single-writer constraint),
+// while the reader pool allows concurrent API reads.
 type SQLiteStore struct {
-	db *sql.DB
+	writer *sql.DB
+	reader *sql.DB
 }
 
 // Open creates or opens a SQLite database at the given path.
-// The database is configured with WAL journal mode, a single connection,
-// and a 5-second busy timeout.
-func Open(path string) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite", path)
+// readPoolSize controls the number of concurrent read connections.
+// The database is configured with WAL journal mode and a 5-second busy timeout.
+func Open(path string, readPoolSize ...int) (*SQLiteStore, error) {
+	poolSize := 4
+	if len(readPoolSize) > 0 && readPoolSize[0] > 0 {
+		poolSize = readPoolSize[0]
+	}
+
+	writer, err := sql.Open("sqlite", path)
 	if err != nil {
-		return nil, fmt.Errorf("open sqlite: %w", err)
+		return nil, fmt.Errorf("open sqlite writer: %w", err)
+	}
+	writer.SetMaxOpenConns(1)
+
+	if err := configureSQLite(writer); err != nil {
+		_ = writer.Close()
+		return nil, fmt.Errorf("configure writer: %w", err)
 	}
 
-	// TODO(phase2): split into a write pool (max 1 conn) and a read pool
-	// (max N conns) so API reads don't block behind sync writes. WAL mode
-	// supports concurrent readers alongside a single writer.
-	db.SetMaxOpenConns(1)
+	reader, err := sql.Open("sqlite", path)
+	if err != nil {
+		_ = writer.Close()
+		return nil, fmt.Errorf("open sqlite reader: %w", err)
+	}
+	reader.SetMaxOpenConns(poolSize)
 
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("set WAL mode: %w", err)
-	}
-	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("set busy_timeout: %w", err)
-	}
-	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("set foreign_keys: %w", err)
+	if err := configureSQLite(reader); err != nil {
+		_ = writer.Close()
+		_ = reader.Close()
+		return nil, fmt.Errorf("configure reader: %w", err)
 	}
 
-	s := &SQLiteStore{db: db}
+	s := &SQLiteStore{writer: writer, reader: reader}
 	if err := s.migrate(); err != nil {
-		_ = db.Close()
+		_ = writer.Close()
+		_ = reader.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return s, nil
 }
 
+func configureSQLite(db *sql.DB) error {
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		return fmt.Errorf("set WAL mode: %w", err)
+	}
+	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		return fmt.Errorf("set busy_timeout: %w", err)
+	}
+	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
+		return fmt.Errorf("set foreign_keys: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) migrate() error {
 	var version int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+	if err := s.writer.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return fmt.Errorf("read user_version: %w", err)
 	}
 
@@ -71,7 +95,7 @@ func (s *SQLiteStore) migrate() error {
 		return fmt.Errorf("read migration: %w", err)
 	}
 
-	tx, err := s.db.Begin()
+	tx, err := s.writer.Begin()
 	if err != nil {
 		return fmt.Errorf("begin migration tx: %w", err)
 	}
@@ -92,7 +116,7 @@ func (s *SQLiteStore) PutBlobs(ctx context.Context, blobs []types.Blob) error {
 		return nil
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
@@ -119,7 +143,7 @@ func (s *SQLiteStore) PutBlobs(ctx context.Context, blobs []types.Blob) error {
 }
 
 func (s *SQLiteStore) GetBlob(ctx context.Context, ns types.Namespace, height uint64, index int) (*types.Blob, error) {
-	row := s.db.QueryRowContext(ctx,
+	row := s.reader.QueryRowContext(ctx,
 		`SELECT height, namespace, commitment, data, share_version, signer, blob_index
 		 FROM blobs WHERE namespace = ? AND height = ? AND blob_index = ?`,
 		ns[:], height, index)
@@ -128,7 +152,7 @@ func (s *SQLiteStore) GetBlob(ctx context.Context, ns types.Namespace, height ui
 }
 
 func (s *SQLiteStore) GetBlobs(ctx context.Context, ns types.Namespace, startHeight, endHeight uint64) ([]types.Blob, error) {
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := s.reader.QueryContext(ctx,
 		`SELECT height, namespace, commitment, data, share_version, signer, blob_index
 		 FROM blobs WHERE namespace = ? AND height >= ? AND height <= ?
 		 ORDER BY height, blob_index`,
@@ -150,7 +174,7 @@ func (s *SQLiteStore) GetBlobs(ctx context.Context, ns types.Namespace, startHei
 }
 
 func (s *SQLiteStore) PutHeader(ctx context.Context, header *types.Header) error {
-	_, err := s.db.ExecContext(ctx,
+	_, err := s.writer.ExecContext(ctx,
 		`INSERT OR IGNORE INTO headers (height, hash, data_hash, time_ns, raw_header)
 		 VALUES (?, ?, ?, ?, ?)`,
 		header.Height, header.Hash, header.DataHash, header.Time.UnixNano(), header.RawHeader)
@@ -163,7 +187,7 @@ func (s *SQLiteStore) PutHeader(ctx context.Context, header *types.Header) error
 func (s *SQLiteStore) GetHeader(ctx context.Context, height uint64) (*types.Header, error) {
 	var h types.Header
 	var timeNs int64
-	err := s.db.QueryRowContext(ctx,
+	err := s.reader.QueryRowContext(ctx,
 		`SELECT height, hash, data_hash, time_ns, raw_header FROM headers WHERE height = ?`,
 		height).Scan(&h.Height, &h.Hash, &h.DataHash, &timeNs, &h.RawHeader)
 	if err != nil {
@@ -177,7 +201,7 @@ func (s *SQLiteStore) GetHeader(ctx context.Context, height uint64) (*types.Head
 }
 
 func (s *SQLiteStore) PutNamespace(ctx context.Context, ns types.Namespace) error {
-	_, err := s.db.ExecContext(ctx,
+	_, err := s.writer.ExecContext(ctx,
 		`INSERT OR IGNORE INTO namespaces (namespace) VALUES (?)`, ns[:])
 	if err != nil {
 		return fmt.Errorf("insert namespace: %w", err)
@@ -186,7 +210,7 @@ func (s *SQLiteStore) PutNamespace(ctx context.Context, ns types.Namespace) erro
 }
 
 func (s *SQLiteStore) GetNamespaces(ctx context.Context) ([]types.Namespace, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT namespace FROM namespaces`)
+	rows, err := s.reader.QueryContext(ctx, `SELECT namespace FROM namespaces`)
 	if err != nil {
 		return nil, fmt.Errorf("query namespaces: %w", err)
 	}
@@ -211,7 +235,7 @@ func (s *SQLiteStore) GetNamespaces(ctx context.Context) ([]types.Namespace, err
 func (s *SQLiteStore) GetSyncState(ctx context.Context) (*types.SyncStatus, error) {
 	var state int
 	var latestHeight, networkHeight uint64
-	err := s.db.QueryRowContext(ctx,
+	err := s.reader.QueryRowContext(ctx,
 		`SELECT state, latest_height, network_height FROM sync_state WHERE id = 1`).
 		Scan(&state, &latestHeight, &networkHeight)
 	if err != nil {
@@ -228,7 +252,7 @@ func (s *SQLiteStore) GetSyncState(ctx context.Context) (*types.SyncStatus, erro
 }
 
 func (s *SQLiteStore) SetSyncState(ctx context.Context, status types.SyncStatus) error {
-	_, err := s.db.ExecContext(ctx,
+	_, err := s.writer.ExecContext(ctx,
 		`INSERT INTO sync_state (id, state, latest_height, network_height, updated_at)
 		 VALUES (1, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
@@ -244,7 +268,12 @@ func (s *SQLiteStore) SetSyncState(ctx context.Context, status types.SyncStatus)
 }
 
 func (s *SQLiteStore) Close() error {
-	return s.db.Close()
+	rErr := s.reader.Close()
+	wErr := s.writer.Close()
+	if rErr != nil {
+		return rErr
+	}
+	return wErr
 }
 
 // scanBlob scans a single blob from a *sql.Row.

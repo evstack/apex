@@ -16,6 +16,9 @@ import (
 // ErrGapDetected is returned by SubscriptionManager when a height gap is found.
 var ErrGapDetected = errors.New("gap detected")
 
+// HeightObserver is called after a height is successfully processed and stored.
+type HeightObserver func(height uint64, header *types.Header, blobs []types.Blob)
+
 // Coordinator manages the sync lifecycle between a data fetcher and a store.
 type Coordinator struct {
 	store       store.Store
@@ -25,6 +28,7 @@ type Coordinator struct {
 	batchSize   int
 	concurrency int
 	startHeight uint64
+	observer    HeightObserver
 	log         zerolog.Logger
 }
 
@@ -59,6 +63,11 @@ func WithStartHeight(h uint64) Option {
 // WithLogger sets the logger for the coordinator and its sub-components.
 func WithLogger(log zerolog.Logger) Option {
 	return func(c *Coordinator) { c.log = log }
+}
+
+// WithObserver sets a callback invoked after each height is successfully stored.
+func WithObserver(obs HeightObserver) Option {
+	return func(c *Coordinator) { c.observer = obs }
 }
 
 // New creates a Coordinator with the given store, fetcher, and options.
@@ -114,6 +123,7 @@ func (c *Coordinator) Run(ctx context.Context) error {
 				fetcher:     c.fetcher,
 				batchSize:   c.batchSize,
 				concurrency: c.concurrency,
+				observer:    c.observer,
 				log:         c.log.With().Str("component", "backfiller").Logger(),
 			}
 			if err := bf.Run(ctx, fromHeight, networkHeight); err != nil {
@@ -126,9 +136,10 @@ func (c *Coordinator) Run(ctx context.Context) error {
 		c.log.Info().Msg("entering streaming mode")
 
 		sm := &SubscriptionManager{
-			store:   c.store,
-			fetcher: c.fetcher,
-			log:     c.log.With().Str("component", "subscription").Logger(),
+			store:    c.store,
+			fetcher:  c.fetcher,
+			observer: c.observer,
+			log:      c.log.With().Str("component", "subscription").Logger(),
 		}
 		err = sm.Run(ctx)
 		if errors.Is(err, ErrGapDetected) {

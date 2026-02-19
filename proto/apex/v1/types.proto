@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package apex.v1;
+
+option go_package = "github.com/evstack/apex/pkg/api/grpc/gen;gen";
+
+import "google/protobuf/timestamp.proto";
+
+// Blob represents a blob submitted to a Celestia namespace.
+message Blob {
+  uint64 height = 1;
+  bytes namespace = 2;
+  bytes data = 3;
+  bytes commitment = 4;
+  uint32 share_version = 5;
+  bytes signer = 6;
+  int32 index = 7;
+}
+
+// Header represents a Celestia block header.
+message Header {
+  uint64 height = 1;
+  bytes hash = 2;
+  bytes data_hash = 3;
+  google.protobuf.Timestamp time = 4;
+  bytes raw_header = 5;
+}

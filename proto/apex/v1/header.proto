@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package apex.v1;
+
+option go_package = "github.com/evstack/apex/pkg/api/grpc/gen;gen";
+
+import "apex/v1/types.proto";
+import "google/protobuf/empty.proto";
+
+// HeaderService provides access to indexed headers.
+service HeaderService {
+  // GetByHeight returns the header at the given height.
+  rpc GetByHeight(GetHeaderRequest) returns (Header);
+
+  // LocalHead returns the header at the latest synced height.
+  rpc LocalHead(google.protobuf.Empty) returns (Header);
+
+  // NetworkHead returns the current network head from the upstream node.
+  rpc NetworkHead(google.protobuf.Empty) returns (Header);
+
+  // Subscribe streams new headers as they are indexed.
+  rpc Subscribe(SubscribeHeadersRequest) returns (stream Header);
+}
+
+message GetHeaderRequest {
+  uint64 height = 1;
+}
+
+message SubscribeHeadersRequest {}

@@ -129,6 +129,9 @@ func (f *CelestiaAppFetcher) SubscribeHeaders(ctx context.Context) (<-chan *type
 		cancel()
 		return nil, fmt.Errorf("fetcher is closed")
 	}
+	if f.cancelSub != nil {
+		f.cancelSub() // cancel previous subscription
+	}
 	f.cancelSub = cancel
 	f.mu.Unlock()
 
@@ -174,13 +177,13 @@ func (f *CelestiaAppFetcher) readHeaderLoop(ctx context.Context, conn *websocket
 	defer close(out)
 	defer conn.Close() //nolint:errcheck
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
+	// Close the connection when context is cancelled to unblock ReadMessage.
+	go func() {
+		<-ctx.Done()
+		_ = conn.Close()
+	}()
 
+	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			if ctx.Err() == nil {

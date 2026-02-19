@@ -106,15 +106,11 @@ func startCmd() *cobra.Command {
 
 			setupLogger(cfg.Log)
 
-			dsType := cfg.DataSource.Type
-			if dsType == "" {
-				dsType = "node"
-			}
 			startLog := log.Info().
 				Str("version", version).
-				Str("datasource_type", dsType).
+				Str("datasource_type", cfg.DataSource.Type).
 				Int("namespaces", len(cfg.DataSource.Namespaces))
-			if dsType == "app" {
+			if cfg.DataSource.Type == "app" {
 				startLog = startLog.Str("app_url", cfg.DataSource.CelestiaAppURL)
 			} else {
 				startLog = startLog.Str("node_url", cfg.DataSource.CelestiaNodeURL)
@@ -202,6 +198,8 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		}
 		dataFetcher = nodeFetcher
 		proofFwd = nodeFetcher
+	default:
+		return fmt.Errorf("unsupported data source type: %q", cfg.DataSource.Type)
 	}
 	defer dataFetcher.Close() //nolint:errcheck
 

@@ -1,6 +1,7 @@
 package syncer
 
 import (
+	"bytes"
 	"context"
 	"sync"
 
@@ -84,7 +85,7 @@ func (m *mockStore) GetBlobByCommitment(_ context.Context, commitment []byte) (*
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.blobs {
-		if string(m.blobs[i].Commitment) == string(commitment) {
+		if bytes.Equal(m.blobs[i].Commitment, commitment) {
 			return &m.blobs[i], nil
 		}
 	}

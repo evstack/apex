@@ -132,40 +132,49 @@ func TestGetBlobNotFound(t *testing.T) {
 }
 
 func TestGetBlobByCommitment(t *testing.T) {
-	s := openTestDB(t)
-	ctx := context.Background()
 	ns := testNamespace(1)
-
-	blobs := []types.Blob{
-		{Height: 10, Namespace: ns, Commitment: []byte("c1"), Data: []byte("d1"), ShareVersion: 0, Index: 0},
-		{Height: 10, Namespace: ns, Commitment: []byte("c2"), Data: []byte("d2"), ShareVersion: 0, Index: 1},
+	seed := []types.Blob{
+		{Height: 10, Namespace: ns, Commitment: []byte("c1"), Data: []byte("d1"), Index: 0},
+		{Height: 10, Namespace: ns, Commitment: []byte("c2"), Data: []byte("d2"), Index: 1},
 	}
-	if err := s.PutBlobs(ctx, blobs); err != nil {
-		t.Fatalf("PutBlobs: %v", err)
+	tests := []struct {
+		name       string
+		commitment []byte
+		wantData   string
+		wantHeight uint64
+		wantIndex  int
+		wantErr    error
+	}{
+		{name: "found", commitment: []byte("c2"), wantData: "d2", wantHeight: 10, wantIndex: 1},
+		{name: "not found", commitment: []byte("nonexistent"), wantErr: ErrNotFound},
 	}
-
-	got, err := s.GetBlobByCommitment(ctx, []byte("c2"))
-	if err != nil {
-		t.Fatalf("GetBlobByCommitment: %v", err)
-	}
-	if string(got.Data) != "d2" {
-		t.Errorf("Data = %q, want %q", got.Data, "d2")
-	}
-	if got.Height != 10 {
-		t.Errorf("Height = %d, want 10", got.Height)
-	}
-	if got.Index != 1 {
-		t.Errorf("Index = %d, want 1", got.Index)
-	}
-}
-
-func TestGetBlobByCommitmentNotFound(t *testing.T) {
-	s := openTestDB(t)
-	ctx := context.Background()
-
-	_, err := s.GetBlobByCommitment(ctx, []byte("nonexistent"))
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected ErrNotFound, got %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := openTestDB(t)
+			ctx := context.Background()
+			if err := s.PutBlobs(ctx, seed); err != nil {
+				t.Fatalf("PutBlobs: %v", err)
+			}
+			got, err := s.GetBlobByCommitment(ctx, tt.commitment)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("got err %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetBlobByCommitment: %v", err)
+			}
+			if string(got.Data) != tt.wantData {
+				t.Errorf("Data = %q, want %q", got.Data, tt.wantData)
+			}
+			if got.Height != tt.wantHeight {
+				t.Errorf("Height = %d, want %d", got.Height, tt.wantHeight)
+			}
+			if got.Index != tt.wantIndex {
+				t.Errorf("Index = %d, want %d", got.Index, tt.wantIndex)
+			}
+		})
 	}
 }
 

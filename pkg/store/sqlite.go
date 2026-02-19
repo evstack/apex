@@ -114,32 +114,35 @@ func (s *SQLiteStore) migrate() error {
 		if version >= m.version {
 			continue
 		}
-
-		ddl, err := migrations.ReadFile(m.file)
-		if err != nil {
-			return fmt.Errorf("read migration %d: %w", m.version, err)
-		}
-
-		tx, err := s.writer.Begin()
-		if err != nil {
-			return fmt.Errorf("begin migration %d tx: %w", m.version, err)
-		}
-		defer tx.Rollback() //nolint:errcheck
-
-		if _, err := tx.Exec(string(ddl)); err != nil {
-			return fmt.Errorf("exec migration %d: %w", m.version, err)
-		}
-		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", m.version)); err != nil {
-			return fmt.Errorf("set user_version to %d: %w", m.version, err)
-		}
-
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit migration %d: %w", m.version, err)
+		if err := s.applyMigration(m); err != nil {
+			return err
 		}
 		version = m.version
 	}
 
 	return nil
+}
+
+func (s *SQLiteStore) applyMigration(m migrationStep) error {
+	ddl, err := migrations.ReadFile(m.file)
+	if err != nil {
+		return fmt.Errorf("read migration %d: %w", m.version, err)
+	}
+
+	tx, err := s.writer.Begin()
+	if err != nil {
+		return fmt.Errorf("begin migration %d tx: %w", m.version, err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.Exec(string(ddl)); err != nil {
+		return fmt.Errorf("exec migration %d: %w", m.version, err)
+	}
+	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", m.version)); err != nil {
+		return fmt.Errorf("set user_version to %d: %w", m.version, err)
+	}
+
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) PutBlobs(ctx context.Context, blobs []types.Blob) error {

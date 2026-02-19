@@ -1,6 +1,7 @@
 package grpcapi
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
@@ -62,7 +63,7 @@ func (m *mockStore) GetBlobs(_ context.Context, ns types.Namespace, startHeight,
 func (m *mockStore) GetBlobByCommitment(_ context.Context, commitment []byte) (*types.Blob, error) {
 	for _, blobs := range m.blobs {
 		for i := range blobs {
-			if string(blobs[i].Commitment) == string(commitment) {
+			if bytes.Equal(blobs[i].Commitment, commitment) {
 				return &blobs[i], nil
 			}
 		}
@@ -224,6 +225,33 @@ func TestGRPCBlobGetAll(t *testing.T) {
 	}
 	if len(resp.Blobs) != 2 {
 		t.Errorf("got %d blobs, want 2", len(resp.Blobs))
+	}
+}
+
+func TestGRPCBlobGetByCommitment(t *testing.T) {
+	st := newMockStore()
+	ns := testNamespace(1)
+	commitment := []byte("c1")
+
+	st.blobs[10] = []types.Blob{
+		{Height: 10, Namespace: ns, Data: []byte("d1"), Commitment: commitment, Index: 0},
+	}
+
+	notifier := api.NewNotifier(16, zerolog.Nop())
+	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
+	client := startTestServer(t, svc)
+
+	resp, err := client.GetByCommitment(context.Background(), &pb.GetByCommitmentRequest{
+		Commitment: commitment,
+	})
+	if err != nil {
+		t.Fatalf("GetByCommitment: %v", err)
+	}
+	if resp.Blob.Height != 10 {
+		t.Errorf("Height = %d, want 10", resp.Blob.Height)
+	}
+	if string(resp.Blob.Data) != "d1" {
+		t.Errorf("Data = %q, want %q", resp.Blob.Data, "d1")
 	}
 }
 

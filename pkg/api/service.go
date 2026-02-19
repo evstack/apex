@@ -56,6 +56,9 @@ func (s *Service) BlobGet(ctx context.Context, height uint64, namespace types.Na
 // BlobGetByCommitment returns a blob matching the given commitment as JSON.
 // No height or namespace required — commitment is cryptographically unique.
 func (s *Service) BlobGetByCommitment(ctx context.Context, commitment []byte) (json.RawMessage, error) {
+	if len(commitment) == 0 {
+		return nil, fmt.Errorf("commitment is required")
+	}
 	b, err := s.store.GetBlobByCommitment(ctx, commitment)
 	if err != nil {
 		return nil, fmt.Errorf("get blob by commitment: %w", err)

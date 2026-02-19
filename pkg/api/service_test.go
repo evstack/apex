@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -57,7 +58,7 @@ func (m *mockStore) GetBlobs(_ context.Context, ns types.Namespace, startHeight,
 func (m *mockStore) GetBlobByCommitment(_ context.Context, commitment []byte) (*types.Blob, error) {
 	for _, blobs := range m.blobs {
 		for i := range blobs {
-			if string(blobs[i].Commitment) == string(commitment) {
+			if bytes.Equal(blobs[i].Commitment, commitment) {
 				return &blobs[i], nil
 			}
 		}
@@ -151,37 +152,46 @@ func TestServiceBlobGet(t *testing.T) {
 }
 
 func TestServiceBlobGetByCommitment(t *testing.T) {
-	st := newMockStore()
-	ns := testNamespace(1)
-	commitment := []byte("c1")
-
-	st.blobs[10] = []types.Blob{
-		{Height: 10, Namespace: ns, Data: []byte("d1"), Commitment: commitment, Index: 0},
+	tests := []struct {
+		name    string
+		seed    bool
+		commit  []byte
+		wantErr bool
+	}{
+		{name: "found", seed: true, commit: []byte("c1")},
+		{name: "not found", seed: false, commit: []byte("missing"), wantErr: true},
+		{name: "empty commitment", seed: false, commit: nil, wantErr: true},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := newMockStore()
+			if tt.seed {
+				ns := testNamespace(1)
+				st.blobs[10] = []types.Blob{
+					{Height: 10, Namespace: ns, Data: []byte("d1"), Commitment: []byte("c1"), Index: 0},
+				}
+			}
+			svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
 
-	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
+			raw, err := svc.BlobGetByCommitment(context.Background(), tt.commit)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("BlobGetByCommitment: %v", err)
+			}
 
-	raw, err := svc.BlobGetByCommitment(context.Background(), commitment)
-	if err != nil {
-		t.Fatalf("BlobGetByCommitment: %v", err)
-	}
-
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &m); err != nil {
-		t.Fatalf("unmarshal blob: %v", err)
-	}
-	if _, ok := m["commitment"]; !ok {
-		t.Error("blob JSON missing 'commitment' field")
-	}
-}
-
-func TestServiceBlobGetByCommitmentNotFound(t *testing.T) {
-	st := newMockStore()
-	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
-
-	_, err := svc.BlobGetByCommitment(context.Background(), []byte("missing"))
-	if !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("expected ErrNotFound, got %v", err)
+			var m map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &m); err != nil {
+				t.Fatalf("unmarshal blob: %v", err)
+			}
+			if _, ok := m["commitment"]; !ok {
+				t.Error("blob JSON missing 'commitment' field")
+			}
+		})
 	}
 }
 

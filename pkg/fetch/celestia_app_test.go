@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -153,9 +154,9 @@ func TestCelestiaAppFetcherGetBlobsNoMatch(t *testing.T) {
 }
 
 func TestCelestiaAppFetcherGetNetworkHead(t *testing.T) {
-	var requestCount int
+	var requestCount atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount++
+		requestCount.Add(1)
 		if strings.HasPrefix(r.URL.Path, "/status") {
 			_, _ = fmt.Fprint(w, cometStatusResponse(50))
 			return
@@ -182,8 +183,8 @@ func TestCelestiaAppFetcherGetNetworkHead(t *testing.T) {
 	if hdr.Height != 50 {
 		t.Errorf("Height = %d, want 50", hdr.Height)
 	}
-	if requestCount != 2 {
-		t.Errorf("expected 2 HTTP requests (status + block), got %d", requestCount)
+	if requestCount.Load() != 2 {
+		t.Errorf("expected 2 HTTP requests (status + block), got %d", requestCount.Load())
 	}
 }
 
@@ -215,11 +216,12 @@ func TestCelestiaAppFetcherSubscribeHeaders(t *testing.T) {
 		}
 	}`, blockTime)
 
+	var upgradeErr atomic.Value
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/websocket" {
 			conn, err := upgrader.Upgrade(w, r, nil)
 			if err != nil {
-				t.Errorf("upgrade: %v", err)
+				upgradeErr.Store(err)
 				return
 			}
 			defer conn.Close() //nolint:errcheck
@@ -267,6 +269,10 @@ func TestCelestiaAppFetcherSubscribeHeaders(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for header")
+	}
+
+	if v := upgradeErr.Load(); v != nil {
+		t.Errorf("websocket upgrade: %v", v)
 	}
 }
 

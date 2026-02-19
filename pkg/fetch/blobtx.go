@@ -154,7 +154,12 @@ func parseMsgPayForBlobs(data []byte) (pfbData, error) {
 			}
 			buf = buf[n:]
 		default:
-			return pfbData{}, fmt.Errorf("field %d: unsupported wire type %d", num, typ)
+			// Skip unknown wire types for forward compatibility.
+			n = protowire.ConsumeFieldValue(num, typ, buf)
+			if n < 0 {
+				return pfbData{}, fmt.Errorf("field %d: invalid value for wire type %d", num, typ)
+			}
+			buf = buf[n:]
 		}
 	}
 	return result, nil
@@ -239,7 +244,12 @@ func parseRawBlob(data []byte) (rawBlob, error) {
 				b.NamespaceVersion = uint32(val)
 			}
 		default:
-			return rawBlob{}, fmt.Errorf("field %d: unsupported wire type %d", num, typ)
+			// Skip unknown wire types for forward compatibility.
+			n = protowire.ConsumeFieldValue(num, typ, data)
+			if n < 0 {
+				return rawBlob{}, fmt.Errorf("field %d: invalid value for wire type %d", num, typ)
+			}
+			data = data[n:]
 		}
 	}
 	return b, nil

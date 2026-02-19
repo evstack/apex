@@ -32,9 +32,24 @@ func rootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&cfgPath, "config", "config.yaml", "path to config file")
 
 	root.AddCommand(versionCmd())
+	root.AddCommand(initCmd(&cfgPath))
 	root.AddCommand(startCmd(&cfgPath))
 
 	return root
+}
+
+func initCmd(cfgPath *string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "init",
+		Short: "Generate a default config file",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if err := config.Generate(*cfgPath); err != nil {
+				return err
+			}
+			fmt.Printf("Config written to %s\n", *cfgPath)
+			return nil
+		},
+	}
 }
 
 func versionCmd() *cobra.Command {

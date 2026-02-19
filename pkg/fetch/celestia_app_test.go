@@ -85,8 +85,8 @@ func TestCelestiaAppFetcherGetHeader(t *testing.T) {
 func TestCelestiaAppFetcherGetBlobs(t *testing.T) {
 	ns := testNS(1)
 
-	blobTx := buildBlobTx([]byte("inner-sdk-tx"),
-		rawBlob{Namespace: ns, Data: []byte("blob-data"), ShareCommitment: []byte("c1")},
+	blobTx := buildBlobTx("signer", [][]byte{[]byte("c1")},
+		rawBlob{Namespace: ns, Data: []byte("blob-data")},
 	)
 	blobTxB64 := base64.StdEncoding.EncodeToString(blobTx)
 
@@ -118,11 +118,14 @@ func TestCelestiaAppFetcherGetBlobs(t *testing.T) {
 	if string(blobs[0].Commitment) != "c1" {
 		t.Errorf("Commitment = %q, want %q", blobs[0].Commitment, "c1")
 	}
+	if string(blobs[0].Signer) != "signer" {
+		t.Errorf("Signer = %q, want %q", blobs[0].Signer, "signer")
+	}
 }
 
 func TestCelestiaAppFetcherGetBlobsNoMatch(t *testing.T) {
 	ns := testNS(1)
-	blobTx := buildBlobTx([]byte("tx"), rawBlob{Namespace: ns, Data: []byte("d")})
+	blobTx := buildBlobTx("s", [][]byte{[]byte("c")}, rawBlob{Namespace: ns, Data: []byte("d")})
 	blobTxB64 := base64.StdEncoding.EncodeToString(blobTx)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

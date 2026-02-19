@@ -1,0 +1,28 @@
+# Go
+bin/
+*.exe
+*.test
+*.out
+
+# Coverage
+coverage.txt
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+
+# Local config
+config.local.yaml
+
+# OS
+.DS_Store
+Thumbs.db

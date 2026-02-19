@@ -1,0 +1,21 @@
+version: "2"
+
+run:
+  go: "1.23"
+
+linters:
+  enable:
+    - gocyclo
+    - misspell
+    - bodyclose
+    - prealloc
+  settings:
+    gocyclo:
+      min-complexity: 15
+  exclusions:
+    paths:
+      - vendor
+
+formatters:
+  enable:
+    - gofumpt

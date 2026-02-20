@@ -209,16 +209,18 @@ func TestNotifierEmptyNamespaceSetDeliversAll(t *testing.T) {
 func TestNotifierMaxSubscribers(t *testing.T) {
 	n := NewNotifier(1, 2, zerolog.Nop())
 
-	_, err1 := n.Subscribe(nil)
-	_, err2 := n.Subscribe(nil)
+	sub1, err1 := n.Subscribe(nil)
+	sub2, err2 := n.Subscribe(nil)
 	_, err3 := n.Subscribe(nil)
 
 	if err1 != nil {
-		t.Errorf("first subscribe failed: %v", err1)
+		t.Fatalf("first subscribe failed: %v", err1)
 	}
+	defer n.Unsubscribe(sub1)
 	if err2 != nil {
-		t.Errorf("second subscribe failed: %v", err2)
+		t.Fatalf("second subscribe failed: %v", err2)
 	}
+	defer n.Unsubscribe(sub2)
 	if err3 == nil {
 		t.Error("third subscribe should have failed")
 	}

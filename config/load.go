@@ -66,7 +66,7 @@ rpc:
   grpc_listen_addr: ":9090"
   # HTTP read/write timeouts in seconds
   read_timeout: 30
-  # write_timeout: 30
+  write_timeout: 30
 
 sync:
   # Height to start syncing from (0 = genesis)
@@ -204,9 +204,6 @@ func validate(cfg *Config) error {
 	}
 	if err := validateProfiling(&cfg.Profiling); err != nil {
 		return err
-	}
-	if cfg.Profiling.Enabled && cfg.Profiling.ListenAddr == "" {
-		return fmt.Errorf("profiling.listen_addr is required when profiling is enabled")
 	}
 	if !validLogLevels[cfg.Log.Level] {
 		return fmt.Errorf("log.level %q is invalid; must be one of trace/debug/info/warn/error/fatal/panic", cfg.Log.Level)

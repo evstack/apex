@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"strconv"
@@ -181,7 +182,9 @@ func (f *CelestiaNodeFetcher) SubscribeHeaders(ctx context.Context) (<-chan *typ
 
 // GetProof forwards a blob proof request to the upstream Celestia node.
 func (f *CelestiaNodeFetcher) GetProof(ctx context.Context, height uint64, namespace, commitment []byte) (json.RawMessage, error) {
-	raw, err := f.blob.GetProof(ctx, height, namespace, commitment)
+	raw, err := f.callRawWithRetry(ctx, "blob.GetProof", func(callCtx context.Context) (json.RawMessage, error) {
+		return f.blob.GetProof(callCtx, height, namespace, commitment)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("blob.GetProof(%d): %w", height, err)
 	}
@@ -189,6 +192,9 @@ func (f *CelestiaNodeFetcher) GetProof(ctx context.Context, height uint64, names
 }
 
 // Included forwards a blob inclusion check to the upstream Celestia node.
+// Does not use callRawWithRetry because the ProofForwarder interface returns
+// (bool, error) rather than (json.RawMessage, error). Proof inclusion checks
+// are user-initiated point queries, so retries are left to the caller.
 func (f *CelestiaNodeFetcher) Included(ctx context.Context, height uint64, namespace []byte, proof json.RawMessage, commitment []byte) (bool, error) {
 	ok, err := f.blob.Included(ctx, height, namespace, proof, commitment)
 	if err != nil {
@@ -304,11 +310,7 @@ func retryDelay(attempt int) time.Duration {
 	if jitterCap <= 0 {
 		return base
 	}
-	n := time.Now().UnixNano()
-	if n < 0 {
-		n = -n
-	}
-	return base + time.Duration(n%int64(jitterCap))
+	return base + time.Duration(rand.Int64N(int64(jitterCap)))
 }
 
 func isNotFoundErr(err error) bool {

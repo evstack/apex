@@ -22,7 +22,7 @@ func TestBackfiller(t *testing.T) {
 		for h := uint64(1); h <= 10; h++ {
 			ft.addHeader(makeHeader(h))
 			ft.addBlobs(h, []types.Blob{
-				{Height: h, Namespace: ns, Data: []byte("data"), Commitment: []byte(fmt.Sprintf("c%d", h)), Index: 0},
+				{Height: h, Namespace: ns, Data: []byte("data"), Commitment: fmt.Appendf(nil, "c%d", h), Index: 0},
 			})
 		}
 

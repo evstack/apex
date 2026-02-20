@@ -3,6 +3,7 @@ package syncer
 import (
 	"bytes"
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/evstack/apex/pkg/store"
@@ -95,10 +96,8 @@ func (m *mockStore) GetBlobByCommitment(_ context.Context, commitment []byte) (*
 func (m *mockStore) PutNamespace(_ context.Context, ns types.Namespace) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for _, existing := range m.namespaces {
-		if existing == ns {
-			return nil
-		}
+	if slices.Contains(m.namespaces, ns) {
+		return nil
 	}
 	m.namespaces = append(m.namespaces, ns)
 	return nil

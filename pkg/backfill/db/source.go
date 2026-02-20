@@ -217,7 +217,7 @@ func blockMetaKey(layout string, height uint64) []byte {
 		key, _ = orderedcode.Append(key, int64(height))
 		return key
 	}
-	return []byte(fmt.Sprintf("H:%d", height))
+	return fmt.Appendf(nil, "H:%d", height)
 }
 
 func blockPartKey(layout string, height uint64, idx uint32) []byte {
@@ -226,7 +226,7 @@ func blockPartKey(layout string, height uint64, idx uint32) []byte {
 		key, _ = orderedcode.Append(key, int64(height), int64(idx))
 		return key
 	}
-	return []byte(fmt.Sprintf("P:%d:%d", height, idx))
+	return fmt.Appendf(nil, "P:%d:%d", height, idx)
 }
 
 type decodedMeta struct {
@@ -704,10 +704,7 @@ func splitIntoParts(raw []byte, partSize int) [][]byte {
 	}
 	var out [][]byte
 	for i := 0; i < len(raw); i += partSize {
-		j := i + partSize
-		if j > len(raw) {
-			j = len(raw)
-		}
+		j := min(i+partSize, len(raw))
 		out = append(out, append([]byte(nil), raw[i:j]...))
 	}
 	return out

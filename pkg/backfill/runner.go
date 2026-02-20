@@ -79,10 +79,7 @@ func (r *Runner) Run(ctx context.Context, fromHeight, toHeight uint64) error {
 
 	for batchStart := fromHeight; batchStart <= toHeight; batchStart += uint64(r.BatchSize) {
 		batchStartTime := time.Now()
-		batchEnd := batchStart + uint64(r.BatchSize) - 1
-		if batchEnd > toHeight {
-			batchEnd = toHeight
-		}
+		batchEnd := min(batchStart+uint64(r.BatchSize)-1, toHeight)
 
 		if err := r.processBatch(ctx, batchStart, batchEnd, namespaces); err != nil {
 			close(stopProgress)
@@ -129,10 +126,7 @@ func (r *Runner) processBatch(ctx context.Context, from, to uint64, namespaces [
 	}
 	close(heights)
 
-	workers := r.Concurrency
-	if int(to-from+1) < workers {
-		workers = int(to - from + 1)
-	}
+	workers := min(int(to-from+1), r.Concurrency)
 
 	var (
 		wg       sync.WaitGroup
@@ -141,9 +135,7 @@ func (r *Runner) processBatch(ctx context.Context, from, to uint64, namespaces [
 	)
 
 	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for height := range heights {
 				mu.Lock()
 				failed := firstErr != nil
@@ -170,7 +162,7 @@ func (r *Runner) processBatch(ctx context.Context, from, to uint64, namespaces [
 					return
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

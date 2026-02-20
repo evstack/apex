@@ -87,7 +87,7 @@ func (m *memStore) GetHeader(_ context.Context, h uint64) (*types.Header, error)
 }
 
 func (m *memStore) PutNamespace(context.Context, types.Namespace) error { return nil }
-func (m *memStore) Close() error                                       { return nil }
+func (m *memStore) Close() error                                        { return nil }
 
 func TestRunnerWithDBSource(t *testing.T) {
 	t.Parallel()
@@ -104,7 +104,6 @@ func TestRunnerWithDBSource(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -142,7 +141,7 @@ func TestRunnerWithDBSource(t *testing.T) {
 			runner := backfill.Runner{
 				Store:       ms,
 				Source:      src,
-				BatchSize:   7,  // not a divisor of 20, tests remainder batch
+				BatchSize:   7, // not a divisor of 20, tests remainder batch
 				Concurrency: 3, // multiple concurrent readers
 				Observer: func(height uint64, _ *types.Header, _ []types.Blob) {
 					obsMu.Lock()

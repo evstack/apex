@@ -36,10 +36,7 @@ const maxReadConns = 8
 // The read pool is sized to min(NumCPU, 8).
 // The database is configured with WAL journal mode and a 5-second busy timeout.
 func Open(path string) (*SQLiteStore, error) {
-	poolSize := runtime.NumCPU()
-	if poolSize > maxReadConns {
-		poolSize = maxReadConns
-	}
+	poolSize := min(runtime.NumCPU(), maxReadConns)
 
 	writer, err := sql.Open("sqlite", path)
 	if err != nil {

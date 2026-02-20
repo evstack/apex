@@ -114,8 +114,8 @@ func TestS3Store_GetBlobs(t *testing.T) {
 	ns := testNamespace(1)
 
 	// Heights 0-7 span two chunks (0-3, 4-7) with chunkSize=4.
-	var blobs []types.Blob
-	for h := uint64(0); h < 8; h++ {
+	blobs := make([]types.Blob, 0, 8)
+	for h := range uint64(8) {
 		blobs = append(blobs, types.Blob{
 			Height:     h,
 			Namespace:  ns,

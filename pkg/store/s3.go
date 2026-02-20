@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -248,10 +249,8 @@ func (s *S3Store) PutNamespace(ctx context.Context, ns types.Namespace) error {
 	}
 
 	nsHex := ns.String()
-	for _, n := range namespaces {
-		if n == nsHex {
-			return nil
-		}
+	if slices.Contains(namespaces, nsHex) {
+		return nil
 	}
 	namespaces = append(namespaces, nsHex)
 

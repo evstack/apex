@@ -27,6 +27,10 @@ type Runner struct {
 
 // Run backfills from fromHeight to toHeight (inclusive).
 func (r *Runner) Run(ctx context.Context, fromHeight, toHeight uint64) error {
+	if fromHeight > toHeight {
+		return nil
+	}
+
 	if r.Metrics == nil {
 		r.Metrics = metrics.Nop()
 	}
@@ -83,7 +87,7 @@ func (r *Runner) Run(ctx context.Context, fromHeight, toHeight uint64) error {
 		if err := r.processBatch(ctx, batchStart, batchEnd, namespaces); err != nil {
 			close(stopProgress)
 			<-progressStopped
-			return err
+			return fmt.Errorf("batch [%d,%d]: %w", batchStart, batchEnd, err)
 		}
 
 		processedHeights.Store(batchEnd - fromHeight + 1)

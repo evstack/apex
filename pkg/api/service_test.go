@@ -135,7 +135,7 @@ func TestServiceBlobGet(t *testing.T) {
 		{Height: 10, Namespace: ns, Data: []byte("d2"), Commitment: []byte("c2"), Index: 1},
 	}
 
-	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
+	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, 1024, zerolog.Nop()), zerolog.Nop())
 
 	raw, err := svc.BlobGet(context.Background(), 10, ns, commitment)
 	if err != nil {
@@ -171,7 +171,7 @@ func TestServiceBlobGetByCommitment(t *testing.T) {
 					{Height: 10, Namespace: ns, Data: []byte("d1"), Commitment: []byte("c1"), Index: 0},
 				}
 			}
-			svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
+			svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, 1024, zerolog.Nop()), zerolog.Nop())
 
 			raw, err := svc.BlobGetByCommitment(context.Background(), tt.commit)
 			if tt.wantErr {
@@ -198,7 +198,7 @@ func TestServiceBlobGetByCommitment(t *testing.T) {
 func TestServiceBlobGetNotFound(t *testing.T) {
 	st := newMockStore()
 	ns := testNamespace(1)
-	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
+	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, 1024, zerolog.Nop()), zerolog.Nop())
 
 	_, err := svc.BlobGet(context.Background(), 10, ns, []byte("missing"))
 	if !errors.Is(err, store.ErrNotFound) {
@@ -216,7 +216,7 @@ func TestServiceBlobGetAll(t *testing.T) {
 		{Height: 10, Namespace: ns2, Data: []byte("d2"), Commitment: []byte("c2"), Index: 0},
 	}
 
-	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
+	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, 1024, zerolog.Nop()), zerolog.Nop())
 
 	raw, err := svc.BlobGetAll(context.Background(), 10, []types.Namespace{ns1, ns2}, 0, 0)
 	if err != nil {
@@ -234,7 +234,7 @@ func TestServiceBlobGetAll(t *testing.T) {
 
 func TestServiceBlobGetAllEmpty(t *testing.T) {
 	st := newMockStore()
-	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
+	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, 1024, zerolog.Nop()), zerolog.Nop())
 
 	raw, err := svc.BlobGetAll(context.Background(), 10, []types.Namespace{testNamespace(1)}, 0, 0)
 	if err != nil {
@@ -252,7 +252,7 @@ func TestServiceHeaderGetByHeight(t *testing.T) {
 		RawHeader: []byte(`{"height":"42"}`),
 	}
 
-	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
+	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, 1024, zerolog.Nop()), zerolog.Nop())
 
 	raw, err := svc.HeaderGetByHeight(context.Background(), 42)
 	if err != nil {
@@ -271,7 +271,7 @@ func TestServiceHeaderLocalHead(t *testing.T) {
 		RawHeader: []byte(`{"height":"100"}`),
 	}
 
-	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
+	svc := NewService(st, &mockFetcher{}, nil, NewNotifier(16, 1024, zerolog.Nop()), zerolog.Nop())
 
 	raw, err := svc.HeaderLocalHead(context.Background())
 	if err != nil {
@@ -290,7 +290,7 @@ func TestServiceHeaderNetworkHead(t *testing.T) {
 		},
 	}
 
-	svc := NewService(newMockStore(), ft, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
+	svc := NewService(newMockStore(), ft, nil, NewNotifier(16, 1024, zerolog.Nop()), zerolog.Nop())
 
 	raw, err := svc.HeaderNetworkHead(context.Background())
 	if err != nil {
@@ -302,7 +302,7 @@ func TestServiceHeaderNetworkHead(t *testing.T) {
 }
 
 func TestServiceProofForwardingUnavailable(t *testing.T) {
-	svc := NewService(newMockStore(), &mockFetcher{}, nil, NewNotifier(16, zerolog.Nop()), zerolog.Nop())
+	svc := NewService(newMockStore(), &mockFetcher{}, nil, NewNotifier(16, 1024, zerolog.Nop()), zerolog.Nop())
 
 	_, err := svc.BlobGetProof(context.Background(), 1, nil, nil)
 	if err == nil {

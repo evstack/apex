@@ -30,7 +30,10 @@ func (h *HeaderHandler) NetworkHead(ctx context.Context) (json.RawMessage, error
 // Subscribe returns a channel of header events.
 // Only available over WebSocket.
 func (h *HeaderHandler) Subscribe(ctx context.Context) (<-chan json.RawMessage, error) {
-	sub := h.svc.HeaderSubscribe()
+	sub, err := h.svc.HeaderSubscribe()
+	if err != nil {
+		return nil, err
+	}
 	out := make(chan json.RawMessage, cap(sub.Events()))
 
 	go func() {

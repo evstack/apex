@@ -53,7 +53,7 @@ func TestHealthEndpoint(t *testing.T) {
 				LatestHeight:  100,
 				NetworkHeight: 105,
 			}}
-			notifier := NewNotifier(64, zerolog.Nop())
+			notifier := NewNotifier(64, 1024, zerolog.Nop())
 			h := NewHealthHandler(sp, newMockStore(), notifier, "test")
 
 			mux := http.NewServeMux()
@@ -87,7 +87,7 @@ func TestReadyEndpoint(t *testing.T) {
 		LatestHeight:  100,
 		NetworkHeight: 100,
 	}}
-	notifier := NewNotifier(64, zerolog.Nop())
+	notifier := NewNotifier(64, 1024, zerolog.Nop())
 	h := NewHealthHandler(sp, newMockStore(), notifier, "test")
 
 	mux := http.NewServeMux()

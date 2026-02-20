@@ -49,7 +49,10 @@ func (h *BlobHandler) Subscribe(ctx context.Context, namespace []byte) (<-chan j
 		return nil, err
 	}
 
-	sub := h.svc.BlobSubscribe(ns)
+	sub, err := h.svc.BlobSubscribe(ns)
+	if err != nil {
+		return nil, err
+	}
 	out := make(chan json.RawMessage, cap(sub.Events()))
 
 	go func() {

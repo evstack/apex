@@ -108,7 +108,10 @@ func (s *BlobServiceServer) Subscribe(req *pb.BlobServiceSubscribeRequest, strea
 		return status.Errorf(codes.InvalidArgument, "invalid namespace: %v", err)
 	}
 
-	sub := s.svc.Notifier().Subscribe([]types.Namespace{ns})
+	sub, err := s.svc.Notifier().Subscribe([]types.Namespace{ns})
+	if err != nil {
+		return status.Errorf(codes.ResourceExhausted, "subscribe: %v", err)
+	}
 	defer s.svc.Notifier().Unsubscribe(sub)
 
 	ctx := stream.Context()

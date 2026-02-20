@@ -260,11 +260,11 @@ func (x *Block) GetData() *Data {
 
 type Header struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Field numbers match CometBFT's types.proto Header.
-	ChainId       string                 `protobuf:"bytes,3,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
-	Height        int64                  `protobuf:"varint,4,opt,name=height,proto3" json:"height,omitempty"`
-	Time          *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=time,proto3" json:"time,omitempty"`
-	DataHash      []byte                 `protobuf:"bytes,10,opt,name=data_hash,json=dataHash,proto3" json:"data_hash,omitempty"`
+	// Field numbers match tendermint.types.Header in CometBFT's types.proto.
+	ChainId       string                 `protobuf:"bytes,2,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
+	Height        int64                  `protobuf:"varint,3,opt,name=height,proto3" json:"height,omitempty"`
+	Time          *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=time,proto3" json:"time,omitempty"`
+	DataHash      []byte                 `protobuf:"bytes,7,opt,name=data_hash,json=dataHash,proto3" json:"data_hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -433,11 +433,10 @@ const file_cosmos_base_tendermint_v1beta1_query_proto_rawDesc = "" +
 	"\x06header\x18\x01 \x01(\v2&.cosmos.base.tendermint.v1beta1.HeaderR\x06header\x128\n" +
 	"\x04data\x18\x02 \x01(\v2$.cosmos.base.tendermint.v1beta1.DataR\x04data\"\x88\x01\n" +
 	"\x06Header\x12\x19\n" +
-	"\bchain_id\x18\x03 \x01(\tR\achainId\x12\x16\n" +
-	"\x06height\x18\x04 \x01(\x03R\x06height\x12.\n" +
-	"\x04time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x1b\n" +
-	"\tdata_hash\x18\n" +
-	" \x01(\fR\bdataHash\"\x18\n" +
+	"\bchain_id\x18\x02 \x01(\tR\achainId\x12\x16\n" +
+	"\x06height\x18\x03 \x01(\x03R\x06height\x12.\n" +
+	"\x04time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x1b\n" +
+	"\tdata_hash\x18\a \x01(\fR\bdataHash\"\x18\n" +
 	"\x04Data\x12\x10\n" +
 	"\x03txs\x18\x01 \x03(\fR\x03txs\"\x1d\n" +
 	"\aBlockID\x12\x12\n" +

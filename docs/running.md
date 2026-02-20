@@ -61,7 +61,7 @@ No auth token needed for celestia-app. Proof endpoints (`blob.GetProof`, `blob.I
 data_source:
   type: "node"                                    # "node" or "app"
   celestia_node_url: "http://localhost:26658"      # required when type: node
-  celestia_app_grpc_addr: "localhost:9090"            # required when type: app
+  celestia_app_grpc_addr: "localhost:9090"          # required when type: app
   namespaces: []                                   # hex-encoded, 29 bytes each
 
 storage:

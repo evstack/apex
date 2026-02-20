@@ -35,11 +35,11 @@ message Block {
 }
 
 message Header {
-  // Field numbers match CometBFT's types.proto Header.
-  string chain_id = 3;
-  int64 height = 4;
-  google.protobuf.Timestamp time = 7;
-  bytes data_hash = 10;
+  // Field numbers match tendermint.types.Header in CometBFT's types.proto.
+  string chain_id = 2;
+  int64 height = 3;
+  google.protobuf.Timestamp time = 4;
+  bytes data_hash = 7;
 }
 
 message Data {

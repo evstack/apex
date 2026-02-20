@@ -118,7 +118,7 @@ var validLogLevels = map[string]bool{
 }
 
 // Load reads and validates a YAML config file at the given path.
-// Environment variable APEX_AUTH_TOKEN overrides data_source.auth_token.
+// Environment variable APEX_AUTH_TOKEN populates DataSource.AuthToken.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

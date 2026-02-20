@@ -36,7 +36,7 @@ message Block {
 
 message Header {
   // Field numbers match CometBFT's types.proto Header.
-  bytes chain_id = 3;
+  string chain_id = 3;
   int64 height = 4;
   google.protobuf.Timestamp time = 7;
   bytes data_hash = 10;

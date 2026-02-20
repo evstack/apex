@@ -10,7 +10,6 @@ import (
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	grpcmd "google.golang.org/grpc/metadata"
 
 	cometpb "github.com/evstack/apex/pkg/api/grpc/gen/cosmos/base/tendermint/v1beta1"
 	"github.com/evstack/apex/pkg/types"
@@ -22,7 +21,6 @@ import (
 type CelestiaAppFetcher struct {
 	conn      *grpc.ClientConn
 	client    cometpb.ServiceClient
-	authToken string
 	log       zerolog.Logger
 	mu        sync.Mutex
 	closed    bool
@@ -56,10 +54,9 @@ func NewCelestiaAppFetcher(grpcAddr, authToken string, log zerolog.Logger) (*Cel
 	}
 
 	return &CelestiaAppFetcher{
-		conn:      conn,
-		client:    cometpb.NewServiceClient(conn),
-		authToken: authToken,
-		log:       log.With().Str("component", "celestia-app-fetcher").Logger(),
+		conn:   conn,
+		client: cometpb.NewServiceClient(conn),
+		log:    log.With().Str("component", "celestia-app-fetcher").Logger(),
 	}, nil
 }
 
@@ -93,7 +90,7 @@ func (f *CelestiaAppFetcher) GetBlobs(ctx context.Context, height uint64, namesp
 
 // GetHeightData fetches header and namespace-filtered blobs for a single height.
 func (f *CelestiaAppFetcher) GetHeightData(ctx context.Context, height uint64, namespaces []types.Namespace) (*types.Header, []types.Blob, error) {
-	resp, err := f.client.GetBlockByHeight(f.withAuth(ctx), &cometpb.GetBlockByHeightRequest{
+	resp, err := f.client.GetBlockByHeight(ctx, &cometpb.GetBlockByHeightRequest{
 		Height: int64(height),
 	})
 	if err != nil {
@@ -125,7 +122,7 @@ func (f *CelestiaAppFetcher) GetHeightData(ctx context.Context, height uint64, n
 
 // GetNetworkHead returns the header at the latest block height.
 func (f *CelestiaAppFetcher) GetNetworkHead(ctx context.Context) (*types.Header, error) {
-	resp, err := f.client.GetLatestBlock(f.withAuth(ctx), &cometpb.GetLatestBlockRequest{})
+	resp, err := f.client.GetLatestBlock(ctx, &cometpb.GetLatestBlockRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("get latest block: %w", err)
 	}
@@ -202,16 +199,6 @@ func (f *CelestiaAppFetcher) Close() error {
 		f.cancelSub()
 	}
 	return f.conn.Close()
-}
-
-// withAuth attaches the auth token as gRPC metadata if configured.
-// This is used in addition to PerRPCCredentials for servers that
-// read the token from metadata directly.
-func (f *CelestiaAppFetcher) withAuth(ctx context.Context) context.Context {
-	if f.authToken == "" {
-		return ctx
-	}
-	return grpcmd.AppendToOutgoingContext(ctx, "authorization", "Bearer "+f.authToken)
 }
 
 // mapBlockResponse converts a gRPC block response into a types.Header.

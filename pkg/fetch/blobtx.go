@@ -319,6 +319,12 @@ func extractBlobsFromBlock(txs [][]byte, namespaces []types.Namespace, height ui
 	return result, nil
 }
 
+// ExtractBlobsFromBlock parses BlobTx transactions and returns blobs matching
+// the requested namespaces. It is used by both RPC and DB backfill paths.
+func ExtractBlobsFromBlock(txs [][]byte, namespaces []types.Namespace, height uint64) ([]types.Blob, error) {
+	return extractBlobsFromBlock(txs, namespaces, height)
+}
+
 // extractBytesField returns the first occurrence of a bytes-typed field.
 func extractBytesField(data []byte, target protowire.Number) ([]byte, error) {
 	for len(data) > 0 {

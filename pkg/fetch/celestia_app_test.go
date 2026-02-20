@@ -2,7 +2,6 @@ package fetch
 
 import (
 	"context"
-	"encoding/base64"
 	"net"
 	"testing"
 	"time"
@@ -247,6 +246,3 @@ func TestCloseIdempotent(t *testing.T) {
 		t.Fatalf("Close (second): %v", err)
 	}
 }
-
-// Ensure base64 is imported so tests compile (used by existing blobtx helpers).
-var _ = base64.StdEncoding

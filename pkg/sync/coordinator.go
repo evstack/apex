@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/evstack/apex/pkg/backfill"
 	"github.com/rs/zerolog"
 
 	"github.com/evstack/apex/pkg/fetch"
@@ -32,6 +33,7 @@ type Coordinator struct {
 	concurrency   int
 	startHeight   uint64
 	observer      HeightObserver
+	backfillSrc   backfill.Source
 	metrics       metrics.Recorder
 	log           zerolog.Logger
 }
@@ -72,6 +74,11 @@ func WithLogger(log zerolog.Logger) Option {
 // WithObserver sets a callback invoked after each height is successfully stored.
 func WithObserver(obs HeightObserver) Option {
 	return func(c *Coordinator) { c.observer = obs }
+}
+
+// WithBackfillSource sets the source used for historical backfill.
+func WithBackfillSource(src backfill.Source) Option {
+	return func(c *Coordinator) { c.backfillSrc = src }
 }
 
 // WithMetrics sets the metrics recorder for the coordinator.
@@ -162,6 +169,7 @@ func (c *Coordinator) Run(ctx context.Context) error {
 			bf := &Backfiller{
 				store:       c.store,
 				fetcher:     c.fetcher,
+				source:      c.backfillSrc,
 				batchSize:   c.batchSize,
 				concurrency: c.concurrency,
 				observer:    wrappedObserver,

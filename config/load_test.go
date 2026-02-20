@@ -17,6 +17,12 @@ func TestDefaultConfigProfilingDefaults(t *testing.T) {
 	if cfg.Profiling.ListenAddr != "127.0.0.1:6061" {
 		t.Fatalf("profiling.listen_addr default = %q, want %q", cfg.Profiling.ListenAddr, "127.0.0.1:6061")
 	}
+	if cfg.Sync.BatchSize != 256 {
+		t.Fatalf("sync.batch_size default = %d, want %d", cfg.Sync.BatchSize, 256)
+	}
+	if cfg.Sync.Concurrency != 12 {
+		t.Fatalf("sync.concurrency default = %d, want %d", cfg.Sync.Concurrency, 12)
+	}
 }
 
 func TestLoadProfilingEnabledRequiresListenAddr(t *testing.T) {

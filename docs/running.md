@@ -73,8 +73,8 @@ rpc:
 
 sync:
   start_height: 0                                  # 0 = genesis
-  batch_size: 64                                   # headers per backfill batch
-  concurrency: 4                                   # concurrent fetch workers
+  batch_size: 256                                  # headers per backfill batch
+  concurrency: 12                                  # concurrent fetch workers
 
 subscription:
   buffer_size: 64                                  # event buffer per subscriber

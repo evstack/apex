@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -42,6 +45,12 @@ type CelestiaNodeFetcher struct {
 	closed       bool
 }
 
+const (
+	defaultRPCTimeout    = 8 * time.Second
+	defaultRPCMaxRetries = 2
+	defaultRPCRetryDelay = 100 * time.Millisecond
+)
+
 // NewCelestiaNodeFetcher connects to a Celestia node at the given WebSocket address.
 func NewCelestiaNodeFetcher(ctx context.Context, addr, token string, log zerolog.Logger) (*CelestiaNodeFetcher, error) {
 	headers := http.Header{}
@@ -67,7 +76,9 @@ func NewCelestiaNodeFetcher(ctx context.Context, addr, token string, log zerolog
 }
 
 func (f *CelestiaNodeFetcher) GetHeader(ctx context.Context, height uint64) (*types.Header, error) {
-	raw, err := f.header.GetByHeight(ctx, height)
+	raw, err := f.callRawWithRetry(ctx, "header.GetByHeight", func(callCtx context.Context) (json.RawMessage, error) {
+		return f.header.GetByHeight(callCtx, height)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("header.GetByHeight(%d): %w", height, err)
 	}
@@ -76,7 +87,9 @@ func (f *CelestiaNodeFetcher) GetHeader(ctx context.Context, height uint64) (*ty
 
 func (f *CelestiaNodeFetcher) GetBlobs(ctx context.Context, height uint64, namespaces []types.Namespace) ([]types.Blob, error) {
 	nsBytes := namespacesToBytes(namespaces)
-	raw, err := f.blob.GetAll(ctx, height, nsBytes)
+	raw, err := f.callRawWithRetry(ctx, "blob.GetAll", func(callCtx context.Context) (json.RawMessage, error) {
+		return f.blob.GetAll(callCtx, height, nsBytes)
+	})
 	if err != nil {
 		if isNotFoundErr(err) {
 			return nil, nil
@@ -88,11 +101,48 @@ func (f *CelestiaNodeFetcher) GetBlobs(ctx context.Context, height uint64, names
 }
 
 func (f *CelestiaNodeFetcher) GetNetworkHead(ctx context.Context) (*types.Header, error) {
-	raw, err := f.header.NetworkHead(ctx)
+	raw, err := f.callRawWithRetry(ctx, "header.NetworkHead", func(callCtx context.Context) (json.RawMessage, error) {
+		return f.header.NetworkHead(callCtx)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("header.NetworkHead: %w", err)
 	}
 	return mapHeader(raw)
+}
+
+func (f *CelestiaNodeFetcher) callRawWithRetry(ctx context.Context, op string, fn func(context.Context) (json.RawMessage, error)) (json.RawMessage, error) {
+	var err error
+	for attempt := range defaultRPCMaxRetries + 1 {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+
+		callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+		raw, callErr := fn(callCtx)
+		cancel()
+		if callErr == nil {
+			return raw, nil
+		}
+		err = callErr
+
+		if isNotFoundErr(err) || !isTransientRPCError(err) || attempt == defaultRPCMaxRetries {
+			break
+		}
+
+		delay := retryDelay(attempt)
+		f.log.Warn().
+			Str("op", op).
+			Int("attempt", attempt+1).
+			Dur("retry_in", delay).
+			Err(err).
+			Msg("transient rpc error; retrying")
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return nil, err
 }
 
 func (f *CelestiaNodeFetcher) SubscribeHeaders(ctx context.Context) (<-chan *types.Header, error) {
@@ -242,12 +292,23 @@ func mapBlobs(raw json.RawMessage, height uint64) ([]types.Blob, error) {
 
 func namespacesToBytes(nss []types.Namespace) [][]byte {
 	out := make([][]byte, len(nss))
-	for i, ns := range nss {
-		b := make([]byte, types.NamespaceSize)
-		copy(b, ns[:])
-		out[i] = b
+	for i := range nss {
+		out[i] = nss[i][:]
 	}
 	return out
+}
+
+func retryDelay(attempt int) time.Duration {
+	base := defaultRPCRetryDelay * time.Duration(1<<attempt)
+	jitterCap := base / 2
+	if jitterCap <= 0 {
+		return base
+	}
+	n := time.Now().UnixNano()
+	if n < 0 {
+		n = -n
+	}
+	return base + time.Duration(n%int64(jitterCap))
 }
 
 func isNotFoundErr(err error) bool {
@@ -257,6 +318,37 @@ func isNotFoundErr(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "blob: not found") ||
 		strings.Contains(msg, "header: not found")
+}
+
+func isTransientRPCError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, needle := range []string{
+		"eof",
+		"connection reset by peer",
+		"broken pipe",
+		"i/o timeout",
+		"timeout",
+		"temporarily unavailable",
+		"connection refused",
+		"503",
+		"504",
+		"502",
+	} {
+		if strings.Contains(msg, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // jsonInt64 handles CometBFT's int64 fields encoded as JSON strings.

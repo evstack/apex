@@ -64,18 +64,23 @@ rpc:
   listen_addr: ":8080"
   # Address for the gRPC API server
   grpc_listen_addr: ":9090"
+  # HTTP read/write timeouts in seconds
+  read_timeout: 30
+  # write_timeout: 30
 
 sync:
   # Height to start syncing from (0 = genesis)
   start_height: 0
   # Number of headers per backfill batch
-  batch_size: 64
+  batch_size: 256
   # Number of concurrent fetch workers
-  concurrency: 4
+  concurrency: 12
 
 subscription:
   # Event buffer size per subscriber (for API subscriptions)
   buffer_size: 64
+  # Maximum number of concurrent subscribers
+  max_subscribers: 1024
 
 metrics:
   # Enable Prometheus metrics endpoint
@@ -185,26 +190,20 @@ func validate(cfg *Config) error {
 	if err := validateStorage(&cfg.Storage); err != nil {
 		return err
 	}
-	if cfg.RPC.ListenAddr == "" {
-		return fmt.Errorf("rpc.listen_addr is required")
+	if err := validateRPC(&cfg.RPC); err != nil {
+		return err
 	}
-	if cfg.RPC.GRPCListenAddr == "" {
-		return fmt.Errorf("rpc.grpc_listen_addr is required")
+	if err := validateSync(&cfg.Sync); err != nil {
+		return err
 	}
-	if cfg.Sync.BatchSize <= 0 {
-		return fmt.Errorf("sync.batch_size must be positive")
+	if err := validateSubscription(&cfg.Subscription); err != nil {
+		return err
 	}
-	if cfg.Sync.Concurrency <= 0 {
-		return fmt.Errorf("sync.concurrency must be positive")
+	if err := validateMetrics(&cfg.Metrics); err != nil {
+		return err
 	}
-	if cfg.Subscription.BufferSize <= 0 {
-		return fmt.Errorf("subscription.buffer_size must be positive")
-	}
-	if cfg.Metrics.Enabled && cfg.Metrics.ListenAddr == "" {
-		return fmt.Errorf("metrics.listen_addr is required when metrics are enabled")
-	}
-	if cfg.Profiling.Enabled && cfg.Profiling.ListenAddr == "" {
-		return fmt.Errorf("profiling.listen_addr is required when profiling is enabled")
+	if err := validateProfiling(&cfg.Profiling); err != nil {
+		return err
 	}
 	if !validLogLevels[cfg.Log.Level] {
 		return fmt.Errorf("log.level %q is invalid; must be one of trace/debug/info/warn/error/fatal/panic", cfg.Log.Level)
@@ -213,5 +212,55 @@ func validate(cfg *Config) error {
 		return fmt.Errorf("log.format %q is invalid; must be json or console", cfg.Log.Format)
 	}
 
+	return nil
+}
+
+func validateRPC(rpc *RPCConfig) error {
+	if rpc.ListenAddr == "" {
+		return fmt.Errorf("rpc.listen_addr is required")
+	}
+	if rpc.GRPCListenAddr == "" {
+		return fmt.Errorf("rpc.grpc_listen_addr is required")
+	}
+	if rpc.ReadTimeout < 0 {
+		return fmt.Errorf("rpc.read_timeout must be non-negative")
+	}
+	if rpc.WriteTimeout < 0 {
+		return fmt.Errorf("rpc.write_timeout must be non-negative")
+	}
+	return nil
+}
+
+func validateSync(sync *SyncConfig) error {
+	if sync.BatchSize <= 0 {
+		return fmt.Errorf("sync.batch_size must be positive")
+	}
+	if sync.Concurrency <= 0 {
+		return fmt.Errorf("sync.concurrency must be positive")
+	}
+	return nil
+}
+
+func validateSubscription(sub *SubscriptionConfig) error {
+	if sub.BufferSize <= 0 {
+		return fmt.Errorf("subscription.buffer_size must be positive")
+	}
+	if sub.MaxSubscribers <= 0 {
+		return fmt.Errorf("subscription.max_subscribers must be positive")
+	}
+	return nil
+}
+
+func validateMetrics(m *MetricsConfig) error {
+	if m.Enabled && m.ListenAddr == "" {
+		return fmt.Errorf("metrics.listen_addr is required when metrics are enabled")
+	}
+	return nil
+}
+
+func validateProfiling(p *ProfilingConfig) error {
+	if p.Enabled && p.ListenAddr == "" {
+		return fmt.Errorf("profiling.listen_addr is required when profiling is enabled")
+	}
 	return nil
 }

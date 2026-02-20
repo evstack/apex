@@ -238,7 +238,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	defer dataFetcher.Close() //nolint:errcheck
 
 	// Set up API layer.
-	notifier := api.NewNotifier(cfg.Subscription.BufferSize, log.Logger)
+	notifier := api.NewNotifier(cfg.Subscription.BufferSize, cfg.Subscription.MaxSubscribers, log.Logger)
 	notifier.SetMetrics(rec)
 	svc := api.NewService(db, dataFetcher, proofFwd, notifier, log.Logger)
 
@@ -266,6 +266,8 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		Addr:              cfg.RPC.ListenAddr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       time.Duration(cfg.RPC.ReadTimeout) * time.Second,
+		WriteTimeout:      time.Duration(cfg.RPC.WriteTimeout) * time.Second,
 	}
 
 	go func() {

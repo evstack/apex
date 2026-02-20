@@ -1,8 +1,10 @@
 package fetch
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -156,6 +158,54 @@ func TestIsNotFoundErr(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("isNotFoundErr(%v) = %v, want %v", tt.err, got, tt.want)
 		}
+	}
+}
+
+func TestIsTransientRPCError(t *testing.T) {
+	tests := []struct {
+		err  error
+		want bool
+	}{
+		{nil, false},
+		{io.EOF, true},
+		{context.DeadlineExceeded, true},
+		{errors.New("rpc error: connection reset by peer"), true},
+		{errors.New("rpc error: blob: not found"), false},
+		{errors.New("invalid request"), false},
+	}
+	for _, tt := range tests {
+		got := isTransientRPCError(tt.err)
+		if got != tt.want {
+			t.Errorf("isTransientRPCError(%v) = %v, want %v", tt.err, got, tt.want)
+		}
+	}
+}
+
+func TestGetBlobsRetriesTransient(t *testing.T) {
+	t.Parallel()
+
+	var calls int
+	f := &CelestiaNodeFetcher{
+		blob: blobAPI{
+			GetAll: func(_ context.Context, _ uint64, _ [][]byte) (json.RawMessage, error) {
+				calls++
+				if calls == 1 {
+					return nil, io.EOF
+				}
+				return json.RawMessage("[]"), nil
+			},
+		},
+	}
+
+	got, err := f.GetBlobs(context.Background(), 100, nil)
+	if err != nil {
+		t.Fatalf("GetBlobs: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("len(got) = %d, want 0", len(got))
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2", calls)
 	}
 }
 

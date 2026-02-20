@@ -2,74 +2,98 @@ package fetch
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"sync/atomic"
+	"net"
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	cometpb "github.com/evstack/apex/pkg/api/grpc/gen/cosmos/base/tendermint/v1beta1"
 	"github.com/evstack/apex/pkg/types"
 )
 
-func cometBlockResponse(height int, txsB64 []string, timeStr string) string {
-	txsJSON, _ := json.Marshal(txsB64)
-	return fmt.Sprintf(`{
-		"jsonrpc": "2.0",
-		"id": 1,
-		"result": {
-			"block_id": {
-				"hash": "ABCD1234"
-			},
-			"block": {
-				"header": {
-					"height": "%d",
-					"time": "%s",
-					"data_hash": "DDDD"
+// mockCometService implements the generated ServiceServer interface.
+type mockCometService struct {
+	cometpb.UnimplementedServiceServer
+	blocks      map[int64]*cometpb.GetBlockByHeightResponse
+	latestBlock *cometpb.GetLatestBlockResponse
+}
+
+func (m *mockCometService) GetBlockByHeight(_ context.Context, req *cometpb.GetBlockByHeightRequest) (*cometpb.GetBlockByHeightResponse, error) {
+	resp, ok := m.blocks[req.Height]
+	if !ok {
+		return &cometpb.GetBlockByHeightResponse{
+			BlockId: &cometpb.BlockID{Hash: []byte("default")},
+			Block: &cometpb.Block{
+				Header: &cometpb.Header{
+					Height: req.Height,
+					Time:   timestamppb.Now(),
 				},
-				"data": {
-					"txs": %s
-				}
-			}
-		}
-	}`, height, timeStr, string(txsJSON))
-}
-
-func cometStatusResponse(height int) string {
-	return fmt.Sprintf(`{
-		"jsonrpc": "2.0",
-		"id": 1,
-		"result": {
-			"sync_info": {
-				"latest_block_height": "%d"
-			}
-		}
-	}`, height)
-}
-
-func TestCelestiaAppFetcherGetHeader(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/block") {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-		blockTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
-		_, _ = fmt.Fprint(w, cometBlockResponse(42, nil, blockTime))
-	}))
-	defer ts.Close()
-
-	f, err := NewCelestiaAppFetcher(ts.URL, "", zerolog.Nop())
-	if err != nil {
-		t.Fatalf("NewCelestiaAppFetcher: %v", err)
+				Data: &cometpb.Data{},
+			},
+		}, nil
 	}
-	defer f.Close() //nolint:errcheck
+	return resp, nil
+}
+
+func (m *mockCometService) GetLatestBlock(context.Context, *cometpb.GetLatestBlockRequest) (*cometpb.GetLatestBlockResponse, error) {
+	return m.latestBlock, nil
+}
+
+func newTestFetcher(t *testing.T, mock *mockCometService) *CelestiaAppFetcher {
+	t.Helper()
+
+	lis := bufconn.Listen(1024 * 1024)
+	srv := grpc.NewServer()
+	cometpb.RegisterServiceServer(srv, mock)
+	go func() {
+		if err := srv.Serve(lis); err != nil {
+			t.Logf("grpc serve: %v", err)
+		}
+	}()
+	t.Cleanup(func() { srv.Stop() })
+
+	conn, err := grpc.NewClient("passthrough:///bufconn",
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+	)
+	if err != nil {
+		t.Fatalf("bufconn dial: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	return newCelestiaAppFetcherFromClient(conn, zerolog.Nop())
+}
+
+func blockResponse(height int64, txs [][]byte, ts time.Time) *cometpb.GetBlockByHeightResponse {
+	return &cometpb.GetBlockByHeightResponse{
+		BlockId: &cometpb.BlockID{Hash: []byte("ABCD1234")},
+		Block: &cometpb.Block{
+			Header: &cometpb.Header{
+				Height:   height,
+				Time:     timestamppb.New(ts),
+				DataHash: []byte("DDDD"),
+			},
+			Data: &cometpb.Data{Txs: txs},
+		},
+	}
+}
+
+func TestGetHeader(t *testing.T) {
+	blockTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	mock := &mockCometService{
+		blocks: map[int64]*cometpb.GetBlockByHeightResponse{
+			42: blockResponse(42, nil, blockTime),
+		},
+	}
+
+	f := newTestFetcher(t, mock)
 
 	hdr, err := f.GetHeader(context.Background(), 42)
 	if err != nil {
@@ -81,27 +105,24 @@ func TestCelestiaAppFetcherGetHeader(t *testing.T) {
 	if len(hdr.Hash) == 0 {
 		t.Error("Hash is empty")
 	}
+	if !hdr.Time.Equal(blockTime) {
+		t.Errorf("Time = %v, want %v", hdr.Time, blockTime)
+	}
 }
 
-func TestCelestiaAppFetcherGetBlobs(t *testing.T) {
+func TestGetBlobs(t *testing.T) {
 	ns := testNS(1)
-
 	blobTx := buildBlobTx("signer", [][]byte{[]byte("c1")},
 		rawBlob{Namespace: ns, Data: []byte("blob-data")},
 	)
-	blobTxB64 := base64.StdEncoding.EncodeToString(blobTx)
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		blockTime := time.Now().UTC().Format(time.RFC3339Nano)
-		_, _ = fmt.Fprint(w, cometBlockResponse(10, []string{blobTxB64}, blockTime))
-	}))
-	defer ts.Close()
-
-	f, err := NewCelestiaAppFetcher(ts.URL, "", zerolog.Nop())
-	if err != nil {
-		t.Fatalf("NewCelestiaAppFetcher: %v", err)
+	mock := &mockCometService{
+		blocks: map[int64]*cometpb.GetBlockByHeightResponse{
+			10: blockResponse(10, [][]byte{blobTx}, time.Now().UTC()),
+		},
 	}
-	defer f.Close() //nolint:errcheck
+
+	f := newTestFetcher(t, mock)
 
 	var nsType types.Namespace
 	copy(nsType[:], ns)
@@ -124,22 +145,17 @@ func TestCelestiaAppFetcherGetBlobs(t *testing.T) {
 	}
 }
 
-func TestCelestiaAppFetcherGetBlobsNoMatch(t *testing.T) {
+func TestGetBlobsNoMatch(t *testing.T) {
 	ns := testNS(1)
 	blobTx := buildBlobTx("s", [][]byte{[]byte("c")}, rawBlob{Namespace: ns, Data: []byte("d")})
-	blobTxB64 := base64.StdEncoding.EncodeToString(blobTx)
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		blockTime := time.Now().UTC().Format(time.RFC3339Nano)
-		_, _ = fmt.Fprint(w, cometBlockResponse(10, []string{blobTxB64}, blockTime))
-	}))
-	defer ts.Close()
-
-	f, err := NewCelestiaAppFetcher(ts.URL, "", zerolog.Nop())
-	if err != nil {
-		t.Fatalf("NewCelestiaAppFetcher: %v", err)
+	mock := &mockCometService{
+		blocks: map[int64]*cometpb.GetBlockByHeightResponse{
+			10: blockResponse(10, [][]byte{blobTx}, time.Now().UTC()),
+		},
 	}
-	defer f.Close() //nolint:errcheck
+
+	f := newTestFetcher(t, mock)
 
 	var ns99 types.Namespace
 	ns99[types.NamespaceSize-1] = 99
@@ -153,28 +169,23 @@ func TestCelestiaAppFetcherGetBlobsNoMatch(t *testing.T) {
 	}
 }
 
-func TestCelestiaAppFetcherGetNetworkHead(t *testing.T) {
-	var requestCount atomic.Int32
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount.Add(1)
-		if strings.HasPrefix(r.URL.Path, "/status") {
-			_, _ = fmt.Fprint(w, cometStatusResponse(50))
-			return
-		}
-		if strings.HasPrefix(r.URL.Path, "/block") {
-			blockTime := time.Now().UTC().Format(time.RFC3339Nano)
-			_, _ = fmt.Fprint(w, cometBlockResponse(50, nil, blockTime))
-			return
-		}
-		http.Error(w, "not found", http.StatusNotFound)
-	}))
-	defer ts.Close()
-
-	f, err := NewCelestiaAppFetcher(ts.URL, "", zerolog.Nop())
-	if err != nil {
-		t.Fatalf("NewCelestiaAppFetcher: %v", err)
+func TestGetNetworkHead(t *testing.T) {
+	blockTime := time.Now().UTC().Truncate(time.Microsecond)
+	mock := &mockCometService{
+		latestBlock: &cometpb.GetLatestBlockResponse{
+			BlockId: &cometpb.BlockID{Hash: []byte("HEAD")},
+			Block: &cometpb.Block{
+				Header: &cometpb.Header{
+					Height:   50,
+					Time:     timestamppb.New(blockTime),
+					DataHash: []byte("DH"),
+				},
+				Data: &cometpb.Data{},
+			},
+		},
 	}
-	defer f.Close() //nolint:errcheck
+
+	f := newTestFetcher(t, mock)
 
 	hdr, err := f.GetNetworkHead(context.Background())
 	if err != nil {
@@ -183,76 +194,26 @@ func TestCelestiaAppFetcherGetNetworkHead(t *testing.T) {
 	if hdr.Height != 50 {
 		t.Errorf("Height = %d, want 50", hdr.Height)
 	}
-	if requestCount.Load() != 2 {
-		t.Errorf("expected 2 HTTP requests (status + block), got %d", requestCount.Load())
-	}
 }
 
-func TestCelestiaAppFetcherSubscribeHeaders(t *testing.T) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: func(_ *http.Request) bool { return true },
+func TestSubscribeHeaders(t *testing.T) {
+	blockTime := time.Now().UTC().Truncate(time.Microsecond)
+
+	mock := &mockCometService{
+		latestBlock: &cometpb.GetLatestBlockResponse{
+			BlockId: &cometpb.BlockID{Hash: []byte("SUB")},
+			Block: &cometpb.Block{
+				Header: &cometpb.Header{
+					Height:   100,
+					Time:     timestamppb.New(blockTime),
+					DataHash: []byte("DH"),
+				},
+				Data: &cometpb.Data{},
+			},
+		},
 	}
 
-	blockTime := time.Now().UTC().Format(time.RFC3339Nano)
-	eventJSON := fmt.Sprintf(`{
-		"jsonrpc": "2.0",
-		"id": 1,
-		"result": {
-			"data": {
-				"type": "tendermint/event/NewBlock",
-				"value": {
-					"block": {
-						"header": {
-							"height": "100",
-							"time": "%s",
-							"data_hash": "AAAA"
-						}
-					},
-					"block_id": {
-						"hash": "BBBB"
-					}
-				}
-			}
-		}
-	}`, blockTime)
-
-	var upgradeErr atomic.Value
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/websocket" {
-			conn, err := upgrader.Upgrade(w, r, nil)
-			if err != nil {
-				upgradeErr.Store(err)
-				return
-			}
-			defer conn.Close() //nolint:errcheck
-
-			// Read the subscribe request.
-			_, _, err = conn.ReadMessage()
-			if err != nil {
-				return
-			}
-
-			// Send subscription confirmation (empty result).
-			_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
-
-			// Send a block event.
-			_ = conn.WriteMessage(websocket.TextMessage, []byte(eventJSON))
-
-			// Wait for client to close.
-			for {
-				if _, _, err := conn.ReadMessage(); err != nil {
-					return
-				}
-			}
-		}
-	}))
-	defer ts.Close()
-
-	f, err := NewCelestiaAppFetcher(ts.URL, "", zerolog.Nop())
-	if err != nil {
-		t.Fatalf("NewCelestiaAppFetcher: %v", err)
-	}
-	defer f.Close() //nolint:errcheck
+	f := newTestFetcher(t, mock)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -270,14 +231,10 @@ func TestCelestiaAppFetcherSubscribeHeaders(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for header")
 	}
-
-	if v := upgradeErr.Load(); v != nil {
-		t.Errorf("websocket upgrade: %v", v)
-	}
 }
 
-func TestCelestiaAppFetcherCloseIdempotent(t *testing.T) {
-	f, err := NewCelestiaAppFetcher("http://localhost:26657", "", zerolog.Nop())
+func TestCloseIdempotent(t *testing.T) {
+	f, err := NewCelestiaAppFetcher("localhost:26657", "", zerolog.Nop())
 	if err != nil {
 		t.Fatalf("NewCelestiaAppFetcher: %v", err)
 	}

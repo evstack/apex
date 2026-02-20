@@ -53,6 +53,7 @@ pkg/store/
 pkg/fetch/
   fetcher.go          DataFetcher + ProofForwarder interfaces
   celestia_node.go    Celestia node-api client (headers, blobs, subscriptions, proofs)
+  celestia_app.go     Celestia-app gRPC client (headers, blobs, polling subscription)
 
 pkg/sync/
   coordinator.go      Sync lifecycle: initialize → backfill → stream, tracks heights
@@ -66,12 +67,14 @@ pkg/api/
   jsonrpc/            JSON-RPC server (go-jsonrpc), blob/header/subscription handlers
   grpc/               gRPC server, protobuf service implementations
     gen/apex/v1/      Generated protobuf Go code
+    gen/cosmos/base/tendermint/v1beta1/  Generated Cosmos CometBFT service client
 
 pkg/metrics/
   metrics.go          Recorder interface (nil-safe), nopRecorder, PromRecorder (Prometheus)
   server.go           HTTP server for /metrics endpoint
 
 proto/apex/v1/        Protobuf definitions (blob, header, types)
+proto/cosmos/base/tendermint/v1beta1/  Minimal Cosmos SDK CometBFT service proto
 
 Dockerfile            Multi-stage build (golang builder + distroless runtime)
 ```
@@ -79,7 +82,7 @@ Dockerfile            Multi-stage build (golang builder + distroless runtime)
 ### Key Interfaces
 
 - **`store.Store`** — persistence (SQLite impl, instrumented with metrics)
-- **`fetch.DataFetcher`** — block data retrieval (Celestia node client)
+- **`fetch.DataFetcher`** — block data retrieval (Celestia node JSON-RPC or celestia-app gRPC)
 - **`fetch.ProofForwarder`** — proof/inclusion forwarding to upstream node
 - **`metrics.Recorder`** — nil-safe metrics abstraction (Prometheus or no-op)
 - **`api.StatusProvider`** — sync status for health endpoints (implemented by coordinator)

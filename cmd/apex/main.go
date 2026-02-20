@@ -20,6 +20,7 @@ import (
 	"github.com/evstack/apex/pkg/api"
 	grpcapi "github.com/evstack/apex/pkg/api/grpc"
 	jsonrpcapi "github.com/evstack/apex/pkg/api/jsonrpc"
+	backfilldb "github.com/evstack/apex/pkg/backfill/db"
 	"github.com/evstack/apex/pkg/fetch"
 	"github.com/evstack/apex/pkg/metrics"
 	"github.com/evstack/apex/pkg/profile"
@@ -112,7 +113,7 @@ func startCmd() *cobra.Command {
 				Str("datasource_type", cfg.DataSource.Type).
 				Int("namespaces", len(cfg.DataSource.Namespaces))
 			if cfg.DataSource.Type == "app" {
-				startLog = startLog.Str("app_url", cfg.DataSource.CelestiaAppURL)
+				startLog = startLog.Str("app_grpc_addr", cfg.DataSource.CelestiaAppGRPCAddr)
 			} else {
 				startLog = startLog.Str("node_url", cfg.DataSource.CelestiaNodeURL)
 			}
@@ -168,7 +169,7 @@ func setupProfiling(cfg *config.Config) *profile.Server {
 func openDataSource(ctx context.Context, cfg *config.Config) (fetch.DataFetcher, fetch.ProofForwarder, error) {
 	switch cfg.DataSource.Type {
 	case "app":
-		appFetcher, err := fetch.NewCelestiaAppFetcher(cfg.DataSource.CelestiaAppURL, cfg.DataSource.AuthToken, log.Logger)
+		appFetcher, err := fetch.NewCelestiaAppFetcher(cfg.DataSource.CelestiaAppGRPCAddr, cfg.DataSource.AuthToken, log.Logger)
 		if err != nil {
 			return nil, nil, fmt.Errorf("create celestia-app fetcher: %w", err)
 		}
@@ -195,6 +196,48 @@ func openStore(ctx context.Context, cfg *config.Config) (store.Store, error) {
 	}
 }
 
+func setStoreMetrics(db store.Store, rec metrics.Recorder) {
+	switch s := db.(type) {
+	case *store.SQLiteStore:
+		s.SetMetrics(rec)
+	case *store.S3Store:
+		s.SetMetrics(rec)
+	}
+}
+
+func persistNamespaces(ctx context.Context, db store.Store, namespaces []types.Namespace) error {
+	for _, ns := range namespaces {
+		if err := db.PutNamespace(ctx, ns); err != nil {
+			return fmt.Errorf("put namespace: %w", err)
+		}
+	}
+	return nil
+}
+
+func maybeBackfillSourceOption(cfg *config.Config, logger zerolog.Logger) (syncer.Option, func(), error) {
+	if cfg.DataSource.Type != "app" || cfg.DataSource.BackfillSource != "db" {
+		return nil, nil, nil
+	}
+
+	dbSrc, err := backfilldb.NewSource(backfilldb.Config{
+		Path:    cfg.DataSource.CelestiaAppDBPath,
+		Backend: cfg.DataSource.CelestiaAppDBBackend,
+		Layout:  cfg.DataSource.CelestiaAppDBLayout,
+	}, logger)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open app db backfill source: %w", err)
+	}
+
+	logger.Info().
+		Str("backfill_source", "db").
+		Str("db_path", cfg.DataSource.CelestiaAppDBPath).
+		Str("db_backend", cfg.DataSource.CelestiaAppDBBackend).
+		Str("db_layout", cfg.DataSource.CelestiaAppDBLayout).
+		Msg("using celestia-app db backfill source")
+
+	return syncer.WithBackfillSource(dbSrc), func() { _ = dbSrc.Close() }, nil
+}
+
 func runIndexer(ctx context.Context, cfg *config.Config) error {
 	// Parse namespaces from config.
 	namespaces, err := cfg.ParsedNamespaces()
@@ -213,21 +256,14 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	defer db.Close() //nolint:errcheck
 
 	// Wire metrics into the store.
-	switch s := db.(type) {
-	case *store.SQLiteStore:
-		s.SetMetrics(rec)
-	case *store.S3Store:
-		s.SetMetrics(rec)
-	}
+	setStoreMetrics(db, rec)
 
 	// Persist configured namespaces.
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	for _, ns := range namespaces {
-		if err := db.PutNamespace(ctx, ns); err != nil {
-			return fmt.Errorf("put namespace: %w", err)
-		}
+	if err := persistNamespaces(ctx, db, namespaces); err != nil {
+		return err
 	}
 
 	// Connect to data source.
@@ -243,7 +279,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	svc := api.NewService(db, dataFetcher, proofFwd, notifier, log.Logger)
 
 	// Build and run the sync coordinator with observer hook.
-	coord := syncer.New(db, dataFetcher,
+	coordOpts := []syncer.Option{
 		syncer.WithStartHeight(cfg.Sync.StartHeight),
 		syncer.WithBatchSize(cfg.Sync.BatchSize),
 		syncer.WithConcurrency(cfg.Sync.Concurrency),
@@ -252,7 +288,20 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		syncer.WithObserver(func(h uint64, hdr *types.Header, blobs []types.Blob) {
 			notifier.Publish(api.HeightEvent{Height: h, Header: hdr, Blobs: blobs})
 		}),
-	)
+	}
+
+	backfillOpt, closeBackfill, err := maybeBackfillSourceOption(cfg, log.Logger)
+	if err != nil {
+		return err
+	}
+	if closeBackfill != nil {
+		defer closeBackfill()
+	}
+	if backfillOpt != nil {
+		coordOpts = append(coordOpts, backfillOpt)
+	}
+
+	coord := syncer.New(db, dataFetcher, coordOpts...)
 
 	// Build HTTP mux: mount health endpoints alongside JSON-RPC.
 	rpcServer := jsonrpcapi.NewServer(svc, log.Logger)

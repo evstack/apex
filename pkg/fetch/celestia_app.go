@@ -2,124 +2,136 @@ package fetch
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
+	cometpb "github.com/evstack/apex/pkg/api/grpc/gen/cosmos/base/tendermint/v1beta1"
 	"github.com/evstack/apex/pkg/types"
 )
 
-// CelestiaAppFetcher implements DataFetcher using CometBFT RPC endpoints
+// CelestiaAppFetcher implements DataFetcher using Cosmos SDK gRPC endpoints
 // exposed by celestia-app (consensus node). This enables indexing without
 // a Celestia DA node.
 type CelestiaAppFetcher struct {
-	baseURL    string
-	wsURL      string
-	httpClient *http.Client
-	authToken  string
-	log        zerolog.Logger
-	mu         sync.Mutex
-	closed     bool
-	cancelSub  context.CancelFunc
+	conn      *grpc.ClientConn
+	client    cometpb.ServiceClient
+	log       zerolog.Logger
+	mu        sync.Mutex
+	closed    bool
+	cancelSub context.CancelFunc
 }
 
+// bearerCreds implements grpc.PerRPCCredentials for bearer token auth.
+type bearerCreds struct {
+	token string
+}
+
+func (b bearerCreds) GetRequestMetadata(_ context.Context, _ ...string) (map[string]string, error) {
+	return map[string]string{"authorization": "Bearer " + b.token}, nil
+}
+
+func (b bearerCreds) RequireTransportSecurity() bool { return false }
+
 // NewCelestiaAppFetcher creates a fetcher that reads from celestia-app's
-// CometBFT RPC. No connection is established at construction time.
-func NewCelestiaAppFetcher(baseURL, authToken string, log zerolog.Logger) (*CelestiaAppFetcher, error) {
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid base URL: %w", err)
+// Cosmos SDK gRPC endpoint. No connection is established at construction time.
+func NewCelestiaAppFetcher(grpcAddr, authToken string, log zerolog.Logger) (*CelestiaAppFetcher, error) {
+	opts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+	if authToken != "" {
+		opts = append(opts, grpc.WithPerRPCCredentials(bearerCreds{token: authToken}))
 	}
 
-	// Derive WebSocket URL.
-	wsScheme := "ws"
-	if u.Scheme == "https" {
-		wsScheme = "wss"
+	conn, err := grpc.NewClient(grpcAddr, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create gRPC client: %w", err)
 	}
-	wsURL := fmt.Sprintf("%s://%s/websocket", wsScheme, u.Host)
 
 	return &CelestiaAppFetcher{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		wsURL:   wsURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		authToken: authToken,
-		log:       log.With().Str("component", "celestia-app-fetcher").Logger(),
+		conn:   conn,
+		client: cometpb.NewServiceClient(conn),
+		log:    log.With().Str("component", "celestia-app-fetcher").Logger(),
 	}, nil
+}
+
+// newCelestiaAppFetcherFromClient creates a fetcher from an existing gRPC
+// client connection. Used in tests with bufconn.
+func newCelestiaAppFetcherFromClient(conn *grpc.ClientConn, log zerolog.Logger) *CelestiaAppFetcher {
+	return &CelestiaAppFetcher{
+		conn:   conn,
+		client: cometpb.NewServiceClient(conn),
+		log:    log.With().Str("component", "celestia-app-fetcher").Logger(),
+	}
 }
 
 // GetHeader fetches a block at the given height and returns a Header.
 func (f *CelestiaAppFetcher) GetHeader(ctx context.Context, height uint64) (*types.Header, error) {
-	endpoint := fmt.Sprintf("%s/block?height=%d", f.baseURL, height)
-	result, err := f.doGet(ctx, endpoint)
+	hdr, _, err := f.GetHeightData(ctx, height, nil)
 	if err != nil {
-		return nil, fmt.Errorf("get block at height %d: %w", height, err)
+		return nil, err
 	}
-	return f.parseBlockHeader(result, height)
+	return hdr, nil
 }
 
 // GetBlobs fetches a block and extracts blobs matching the given namespaces.
 func (f *CelestiaAppFetcher) GetBlobs(ctx context.Context, height uint64, namespaces []types.Namespace) ([]types.Blob, error) {
-	endpoint := fmt.Sprintf("%s/block?height=%d", f.baseURL, height)
-	result, err := f.doGet(ctx, endpoint)
+	_, blobs, err := f.GetHeightData(ctx, height, namespaces)
 	if err != nil {
-		return nil, fmt.Errorf("get block at height %d: %w", height, err)
-	}
-
-	var block cometBlockResult
-	if err := json.Unmarshal(result, &block); err != nil {
-		return nil, fmt.Errorf("unmarshal block result: %w", err)
-	}
-
-	txs := make([][]byte, len(block.Block.Data.Txs))
-	for i, txB64 := range block.Block.Data.Txs {
-		decoded, err := base64.StdEncoding.DecodeString(txB64)
-		if err != nil {
-			return nil, fmt.Errorf("decode tx %d: %w", i, err)
-		}
-		txs[i] = decoded
-	}
-
-	blobs, err := extractBlobsFromBlock(txs, namespaces, height)
-	if err != nil {
-		return nil, fmt.Errorf("extract blobs at height %d: %w", height, err)
-	}
-	if len(blobs) == 0 {
-		return nil, nil
+		return nil, err
 	}
 	return blobs, nil
 }
 
-// GetNetworkHead returns the header at the latest block height.
-func (f *CelestiaAppFetcher) GetNetworkHead(ctx context.Context) (*types.Header, error) {
-	endpoint := fmt.Sprintf("%s/status", f.baseURL)
-	result, err := f.doGet(ctx, endpoint)
+// GetHeightData fetches header and namespace-filtered blobs for a single height.
+func (f *CelestiaAppFetcher) GetHeightData(ctx context.Context, height uint64, namespaces []types.Namespace) (*types.Header, []types.Blob, error) {
+	resp, err := f.client.GetBlockByHeight(ctx, &cometpb.GetBlockByHeightRequest{
+		Height: int64(height),
+	})
 	if err != nil {
-		return nil, fmt.Errorf("get status: %w", err)
+		return nil, nil, fmt.Errorf("get block at height %d: %w", height, err)
 	}
 
-	var status cometStatusResult
-	if err := json.Unmarshal(result, &status); err != nil {
-		return nil, fmt.Errorf("unmarshal status: %w", err)
+	hdr, err := mapBlockResponse(resp.BlockId, resp.Block)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	headHeight := uint64(status.SyncInfo.LatestBlockHeight)
-	return f.GetHeader(ctx, headHeight)
+	if len(namespaces) == 0 {
+		return hdr, nil, nil
+	}
+	if resp.Block == nil || resp.Block.Data == nil {
+		return hdr, nil, nil
+	}
+
+	txs := resp.Block.Data.Txs
+	blobs, err := extractBlobsFromBlock(txs, namespaces, height)
+	if err != nil {
+		return nil, nil, fmt.Errorf("extract blobs at height %d: %w", height, err)
+	}
+	if len(blobs) == 0 {
+		return hdr, nil, nil
+	}
+	return hdr, blobs, nil
 }
 
-// SubscribeHeaders connects to the CometBFT WebSocket and subscribes to
-// new block events. The returned channel is closed on context cancellation
-// or connection error. No reconnection -- the coordinator handles gaps.
+// GetNetworkHead returns the header at the latest block height.
+func (f *CelestiaAppFetcher) GetNetworkHead(ctx context.Context) (*types.Header, error) {
+	resp, err := f.client.GetLatestBlock(ctx, &cometpb.GetLatestBlockRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("get latest block: %w", err)
+	}
+	return mapBlockResponse(resp.BlockId, resp.Block)
+}
+
+// SubscribeHeaders polls GetLatestBlock at 1s intervals and emits new headers
+// when the height advances. The coordinator already handles gaps, so polling
+// is sufficient.
 func (f *CelestiaAppFetcher) SubscribeHeaders(ctx context.Context) (<-chan *types.Header, error) {
 	subCtx, cancel := context.WithCancel(ctx)
 
@@ -130,87 +142,52 @@ func (f *CelestiaAppFetcher) SubscribeHeaders(ctx context.Context) (<-chan *type
 		return nil, fmt.Errorf("fetcher is closed")
 	}
 	if f.cancelSub != nil {
-		f.cancelSub() // cancel previous subscription
+		f.cancelSub()
 	}
 	f.cancelSub = cancel
 	f.mu.Unlock()
 
-	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
-	}
-	header := http.Header{}
-	if f.authToken != "" {
-		header.Set("Authorization", "Bearer "+f.authToken)
-	}
-
-	conn, resp, err := dialer.DialContext(subCtx, f.wsURL, header)
-	if resp != nil && resp.Body != nil {
-		resp.Body.Close() //nolint:errcheck
-	}
-	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("websocket dial: %w", err)
-	}
-
-	// Subscribe to new block events.
-	subscribeReq := map[string]any{
-		"jsonrpc": "2.0",
-		"id":      1,
-		"method":  "subscribe",
-		"params": map[string]string{
-			"query": "tm.event='NewBlock'",
-		},
-	}
-	if err := conn.WriteJSON(subscribeReq); err != nil {
-		_ = conn.Close()
-		cancel()
-		return nil, fmt.Errorf("send subscribe: %w", err)
-	}
-
 	out := make(chan *types.Header, 64)
-	go f.readHeaderLoop(subCtx, conn, out)
+	go f.pollLoop(subCtx, out)
 
 	return out, nil
 }
 
-func (f *CelestiaAppFetcher) readHeaderLoop(ctx context.Context, conn *websocket.Conn, out chan<- *types.Header) {
+func (f *CelestiaAppFetcher) pollLoop(ctx context.Context, out chan<- *types.Header) {
 	defer close(out)
-	defer conn.Close() //nolint:errcheck
 
-	// Close the connection when context is cancelled to unblock ReadMessage.
-	go func() {
-		<-ctx.Done()
-		_ = conn.Close()
-	}()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	var lastHeight uint64
 
 	for {
-		_, msg, err := conn.ReadMessage()
-		if err != nil {
-			if ctx.Err() == nil {
-				f.log.Error().Err(err).Msg("websocket read error")
-			}
-			return
-		}
-
-		hdr, err := f.parseWSBlockEvent(msg)
-		if err != nil {
-			f.log.Warn().Err(err).Msg("skip unparseable block event")
-			continue
-		}
-		if hdr == nil {
-			// Non-block message (e.g. subscription confirmation).
-			continue
-		}
-
 		select {
-		case out <- hdr:
 		case <-ctx.Done():
 			return
+		case <-ticker.C:
+			hdr, err := f.GetNetworkHead(ctx)
+			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				f.log.Warn().Err(err).Msg("poll latest block failed")
+				continue
+			}
+			if hdr.Height <= lastHeight {
+				continue
+			}
+			lastHeight = hdr.Height
+			select {
+			case out <- hdr:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}
 }
 
-// Close cancels any active subscription and marks the fetcher as closed.
+// Close cancels any active subscription and closes the gRPC connection.
 func (f *CelestiaAppFetcher) Close() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -221,159 +198,31 @@ func (f *CelestiaAppFetcher) Close() error {
 	if f.cancelSub != nil {
 		f.cancelSub()
 	}
-	return nil
+	return f.conn.Close()
 }
 
-// doGet performs an authenticated HTTP GET and extracts the "result" field.
-func (f *CelestiaAppFetcher) doGet(ctx context.Context, url string) (json.RawMessage, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+// mapBlockResponse converts a gRPC block response into a types.Header.
+func mapBlockResponse(blockID *cometpb.BlockID, block *cometpb.Block) (*types.Header, error) {
+	if block == nil || block.Header == nil {
+		return nil, fmt.Errorf("nil block or header in response")
 	}
-	if f.authToken != "" {
-		req.Header.Set("Authorization", "Bearer "+f.authToken)
-	}
-
-	resp, err := f.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP GET %s: %w", url, err)
-	}
-	defer resp.Body.Close() //nolint:errcheck
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, body)
+	if blockID == nil {
+		return nil, fmt.Errorf("nil block_id in response")
 	}
 
-	var rpcResp cometRPCResponse
-	if err := json.NewDecoder(resp.Body).Decode(&rpcResp); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-	if rpcResp.Error != nil {
-		return nil, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
-	}
-	return rpcResp.Result, nil
-}
+	hdr := block.Header
+	t := hdr.Time.AsTime()
 
-func (f *CelestiaAppFetcher) parseBlockHeader(result json.RawMessage, height uint64) (*types.Header, error) {
-	var block cometBlockResult
-	if err := json.Unmarshal(result, &block); err != nil {
-		return nil, fmt.Errorf("unmarshal block: %w", err)
-	}
-
-	t, err := time.Parse(time.RFC3339Nano, block.Block.Header.Time)
-	if err != nil {
-		return nil, fmt.Errorf("parse block time: %w", err)
-	}
-
-	return &types.Header{
-		Height:    uint64(block.Block.Header.Height),
-		Hash:      []byte(block.BlockID.Hash),
-		DataHash:  []byte(block.Block.Header.DataHash),
-		Time:      t,
-		RawHeader: result,
-	}, nil
-}
-
-func (f *CelestiaAppFetcher) parseWSBlockEvent(msg []byte) (*types.Header, error) {
-	var event cometWSEvent
-	if err := json.Unmarshal(msg, &event); err != nil {
-		return nil, fmt.Errorf("unmarshal ws event: %w", err)
-	}
-
-	// Skip non-result messages (e.g. subscription confirmation has empty result).
-	if len(event.Result.Data.Value) == 0 {
-		return nil, nil //nolint:nilnil
-	}
-
-	var blockValue cometBlockEventValue
-	if err := json.Unmarshal(event.Result.Data.Value, &blockValue); err != nil {
-		return nil, fmt.Errorf("unmarshal block event value: %w", err)
-	}
-
-	hdr := blockValue.Block.Header
-	t, err := time.Parse(time.RFC3339Nano, hdr.Time)
-	if err != nil {
-		return nil, fmt.Errorf("parse header time: %w", err)
-	}
-
-	raw, err := json.Marshal(blockValue)
+	raw, err := json.Marshal(block)
 	if err != nil {
 		return nil, fmt.Errorf("marshal raw header: %w", err)
 	}
 
 	return &types.Header{
 		Height:    uint64(hdr.Height),
-		Hash:      []byte(blockValue.BlockID.Hash),
-		DataHash:  []byte(hdr.DataHash),
+		Hash:      blockID.Hash,
+		DataHash:  hdr.DataHash,
 		Time:      t,
 		RawHeader: raw,
 	}, nil
-}
-
-// CometBFT JSON-RPC response types.
-
-type cometRPCResponse struct {
-	Result json.RawMessage `json:"result"`
-	Error  *cometRPCError  `json:"error,omitempty"`
-}
-
-type cometRPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-type cometBlockResult struct {
-	BlockID cometBlockID `json:"block_id"`
-	Block   cometBlock   `json:"block"`
-}
-
-type cometBlockID struct {
-	Hash hexBytes `json:"hash"`
-}
-
-type cometBlock struct {
-	Header cometHeader `json:"header"`
-	Data   cometTxData `json:"data"`
-}
-
-type cometHeader struct {
-	Height   jsonInt64 `json:"height"`
-	Time     string    `json:"time"`
-	DataHash hexBytes  `json:"data_hash"`
-}
-
-type cometTxData struct {
-	Txs []string `json:"txs"` // base64-encoded
-}
-
-type cometStatusResult struct {
-	SyncInfo cometSyncInfo `json:"sync_info"`
-}
-
-type cometSyncInfo struct {
-	LatestBlockHeight jsonInt64 `json:"latest_block_height"`
-}
-
-// WebSocket event types.
-
-type cometWSEvent struct {
-	Result cometWSResult `json:"result"`
-}
-
-type cometWSResult struct {
-	Data cometWSData `json:"data"`
-}
-
-type cometWSData struct {
-	Value json.RawMessage `json:"value"`
-}
-
-type cometBlockEventValue struct {
-	Block   cometEventBlock `json:"block"`
-	BlockID cometBlockID    `json:"block_id"`
-}
-
-type cometEventBlock struct {
-	Header cometHeader `json:"header"`
 }

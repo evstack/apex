@@ -20,13 +20,17 @@ type Config struct {
 
 // DataSourceConfig configures the Celestia data source.
 // Type selects the backend: "node" (default) uses a Celestia DA node,
-// "app" uses a celestia-app consensus node via CometBFT RPC.
+// "app" uses a celestia-app consensus node via Cosmos SDK gRPC.
 type DataSourceConfig struct {
-	Type            string   `yaml:"type"` // "node" (default) or "app"
-	CelestiaNodeURL string   `yaml:"celestia_node_url"`
-	CelestiaAppURL  string   `yaml:"celestia_app_url"`
-	AuthToken       string   `yaml:"-"` // populated only via APEX_AUTH_TOKEN env var
-	Namespaces      []string `yaml:"namespaces"`
+	Type                 string   `yaml:"type"` // "node" (default) or "app"
+	CelestiaNodeURL      string   `yaml:"celestia_node_url"`
+	CelestiaAppGRPCAddr  string   `yaml:"celestia_app_grpc_addr"`
+	BackfillSource       string   `yaml:"backfill_source"`         // "rpc" (default) or "db" for app mode
+	CelestiaAppDBPath    string   `yaml:"celestia_app_db_path"`    // required when backfill_source=db
+	CelestiaAppDBBackend string   `yaml:"celestia_app_db_backend"` // auto|pebble|leveldb
+	CelestiaAppDBLayout  string   `yaml:"celestia_app_db_layout"`  // auto|v1|v2
+	AuthToken            string   `yaml:"-"`                       // populated only via APEX_AUTH_TOKEN env var
+	Namespaces           []string `yaml:"namespaces"`
 }
 
 // StorageConfig configures the persistence backend.
@@ -92,8 +96,11 @@ type LogConfig struct {
 func DefaultConfig() Config {
 	return Config{
 		DataSource: DataSourceConfig{
-			Type:            "node",
-			CelestiaNodeURL: "http://localhost:26658",
+			Type:                 "node",
+			CelestiaNodeURL:      "http://localhost:26658",
+			BackfillSource:       "rpc",
+			CelestiaAppDBBackend: "auto",
+			CelestiaAppDBLayout:  "auto",
 		},
 		Storage: StorageConfig{
 			Type:   "sqlite",

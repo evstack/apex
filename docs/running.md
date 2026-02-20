@@ -5,7 +5,7 @@
 - Go 1.25+ (build from source) or Docker
 - A Celestia node to index from:
   - **DA node** (`celestia-node`) -- full blob data + proof forwarding
-  - **Consensus node** (`celestia-app`) -- blob data via CometBFT RPC, no proof support
+  - **Consensus node** (`celestia-app`) -- blob data via Cosmos SDK gRPC, no proof support
 
 ## Install
 
@@ -48,7 +48,7 @@ export APEX_AUTH_TOKEN="your-celestia-node-auth-token"
 ```yaml
 data_source:
   type: "app"
-  celestia_app_url: "http://localhost:26657"
+  celestia_app_grpc_addr: "localhost:9090"
   namespaces:
     - "0000000000000000000000000000000000000000000000000000deadbeef"
 ```
@@ -61,7 +61,7 @@ No auth token needed for celestia-app. Proof endpoints (`blob.GetProof`, `blob.I
 data_source:
   type: "node"                                    # "node" or "app"
   celestia_node_url: "http://localhost:26658"      # required when type: node
-  celestia_app_url: "http://localhost:26657"       # required when type: app
+  celestia_app_grpc_addr: "localhost:9090"          # required when type: app
   namespaces: []                                   # hex-encoded, 29 bytes each
 
 storage:

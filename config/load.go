@@ -205,6 +205,9 @@ func validate(cfg *Config) error {
 	if err := validateProfiling(&cfg.Profiling); err != nil {
 		return err
 	}
+	if cfg.Profiling.Enabled && cfg.Profiling.ListenAddr == "" {
+		return fmt.Errorf("profiling.listen_addr is required when profiling is enabled")
+	}
 	if !validLogLevels[cfg.Log.Level] {
 		return fmt.Errorf("log.level %q is invalid; must be one of trace/debug/info/warn/error/fatal/panic", cfg.Log.Level)
 	}

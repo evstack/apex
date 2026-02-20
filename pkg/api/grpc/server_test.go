@@ -183,7 +183,7 @@ func TestGRPCBlobGet(t *testing.T) {
 		{Height: 10, Namespace: ns, Data: []byte("d1"), Commitment: commitment, Index: 0},
 	}
 
-	notifier := api.NewNotifier(16, zerolog.Nop())
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	client := startTestServer(t, svc)
 
@@ -212,7 +212,7 @@ func TestGRPCBlobGetAll(t *testing.T) {
 		{Height: 10, Namespace: ns, Data: []byte("d2"), Commitment: []byte("c2"), Index: 1},
 	}
 
-	notifier := api.NewNotifier(16, zerolog.Nop())
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	client := startTestServer(t, svc)
 
@@ -237,7 +237,7 @@ func TestGRPCBlobGetByCommitment(t *testing.T) {
 		{Height: 10, Namespace: ns, Data: []byte("d1"), Commitment: commitment, Index: 0},
 	}
 
-	notifier := api.NewNotifier(16, zerolog.Nop())
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	client := startTestServer(t, svc)
 
@@ -266,7 +266,7 @@ func TestGRPCHeaderGetByHeight(t *testing.T) {
 		RawHeader: []byte("raw"),
 	}
 
-	notifier := api.NewNotifier(16, zerolog.Nop())
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	client := startTestHeaderServer(t, svc)
 
@@ -291,7 +291,7 @@ func TestGRPCHeaderLocalHead(t *testing.T) {
 		RawHeader: []byte("raw"),
 	}
 
-	notifier := api.NewNotifier(16, zerolog.Nop())
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	client := startTestHeaderServer(t, svc)
 
@@ -313,7 +313,7 @@ func TestGRPCHeaderNetworkHead(t *testing.T) {
 		},
 	}
 
-	notifier := api.NewNotifier(16, zerolog.Nop())
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
 	svc := api.NewService(newMockStore(), ft, nil, notifier, zerolog.Nop())
 	client := startTestHeaderServer(t, svc)
 
@@ -330,7 +330,7 @@ func TestGRPCBlobSubscribe(t *testing.T) {
 	st := newMockStore()
 	ns := testNamespace(1)
 
-	notifier := api.NewNotifier(16, zerolog.Nop())
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	client := startTestServer(t, svc)
 

@@ -70,14 +70,17 @@ storage:
 rpc:
   listen_addr: ":8080"                             # JSON-RPC + health
   grpc_listen_addr: ":9090"                        # gRPC
+  read_timeout: 30                                 # HTTP read timeout in seconds
+  write_timeout: 30                                # HTTP write timeout in seconds
 
 sync:
   start_height: 0                                  # 0 = genesis
-  batch_size: 64                                   # headers per backfill batch
-  concurrency: 4                                   # concurrent fetch workers
+  batch_size: 256                                  # headers per backfill batch
+  concurrency: 12                                  # concurrent fetch workers
 
 subscription:
   buffer_size: 64                                  # event buffer per subscriber
+  max_subscribers: 1024                            # maximum concurrent subscribers
 
 metrics:
   enabled: true

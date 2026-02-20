@@ -33,8 +33,11 @@ func makeEvent(height uint64, namespaces ...types.Namespace) HeightEvent {
 }
 
 func TestNotifierSubscribePublish(t *testing.T) {
-	n := NewNotifier(16, zerolog.Nop())
-	sub := n.Subscribe(nil) // all namespaces
+	n := NewNotifier(16, 1024, zerolog.Nop())
+	sub, err := n.Subscribe(nil) // all namespaces
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
 	defer n.Unsubscribe(sub)
 
 	event := makeEvent(1, testNamespace(1), testNamespace(2))
@@ -54,11 +57,14 @@ func TestNotifierSubscribePublish(t *testing.T) {
 }
 
 func TestNotifierNamespaceFilter(t *testing.T) {
-	n := NewNotifier(16, zerolog.Nop())
+	n := NewNotifier(16, 1024, zerolog.Nop())
 	ns1 := testNamespace(1)
 	ns2 := testNamespace(2)
 
-	sub := n.Subscribe([]types.Namespace{ns1})
+	sub, err := n.Subscribe([]types.Namespace{ns1})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
 	defer n.Unsubscribe(sub)
 
 	event := makeEvent(1, ns1, ns2)
@@ -78,9 +84,12 @@ func TestNotifierNamespaceFilter(t *testing.T) {
 }
 
 func TestNotifierMultipleSubscribers(t *testing.T) {
-	n := NewNotifier(16, zerolog.Nop())
-	sub1 := n.Subscribe(nil)
-	sub2 := n.Subscribe(nil)
+	n := NewNotifier(16, 1024, zerolog.Nop())
+	sub1, err1 := n.Subscribe(nil)
+	sub2, err2 := n.Subscribe(nil)
+	if err1 != nil || err2 != nil {
+		t.Fatalf("Subscribe failed: %v, %v", err1, err2)
+	}
 	defer n.Unsubscribe(sub1)
 	defer n.Unsubscribe(sub2)
 
@@ -99,8 +108,11 @@ func TestNotifierMultipleSubscribers(t *testing.T) {
 }
 
 func TestNotifierBufferOverflow(t *testing.T) {
-	n := NewNotifier(2, zerolog.Nop())
-	sub := n.Subscribe(nil)
+	n := NewNotifier(2, 1024, zerolog.Nop())
+	sub, err := n.Subscribe(nil)
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
 	defer n.Unsubscribe(sub)
 
 	// Fill buffer.
@@ -126,8 +138,11 @@ func TestNotifierBufferOverflow(t *testing.T) {
 }
 
 func TestNotifierUnsubscribe(t *testing.T) {
-	n := NewNotifier(16, zerolog.Nop())
-	sub := n.Subscribe(nil)
+	n := NewNotifier(16, 1024, zerolog.Nop())
+	sub, err := n.Subscribe(nil)
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
 
 	n.Unsubscribe(sub)
 
@@ -144,8 +159,11 @@ func TestNotifierUnsubscribe(t *testing.T) {
 func TestNotifierContiguityTracking(t *testing.T) {
 	// Verify that after a buffer overflow, lastHeight is reset.
 	// Next delivery should succeed without panic.
-	n := NewNotifier(1, zerolog.Nop())
-	sub := n.Subscribe(nil)
+	n := NewNotifier(1, 1024, zerolog.Nop())
+	sub, err := n.Subscribe(nil)
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
 	defer n.Unsubscribe(sub)
 
 	n.Publish(makeEvent(1))
@@ -167,8 +185,11 @@ func TestNotifierContiguityTracking(t *testing.T) {
 }
 
 func TestNotifierEmptyNamespaceSetDeliversAll(t *testing.T) {
-	n := NewNotifier(16, zerolog.Nop())
-	sub := n.Subscribe([]types.Namespace{}) // explicit empty slice
+	n := NewNotifier(16, 1024, zerolog.Nop())
+	sub, err := n.Subscribe([]types.Namespace{}) // explicit empty slice
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
 	defer n.Unsubscribe(sub)
 
 	ns1 := testNamespace(1)
@@ -182,5 +203,25 @@ func TestNotifierEmptyNamespaceSetDeliversAll(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out")
+	}
+}
+
+func TestNotifierMaxSubscribers(t *testing.T) {
+	n := NewNotifier(1, 2, zerolog.Nop())
+
+	sub1, err1 := n.Subscribe(nil)
+	sub2, err2 := n.Subscribe(nil)
+	_, err3 := n.Subscribe(nil)
+
+	if err1 != nil {
+		t.Fatalf("first subscribe failed: %v", err1)
+	}
+	defer n.Unsubscribe(sub1)
+	if err2 != nil {
+		t.Fatalf("second subscribe failed: %v", err2)
+	}
+	defer n.Unsubscribe(sub2)
+	if err3 == nil {
+		t.Error("third subscribe should have failed")
 	}
 }

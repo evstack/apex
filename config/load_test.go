@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestDefaultConfigProfilingDefaults(t *testing.T) {
+func TestDefaultConfigDefaults(t *testing.T) {
 	t.Parallel()
 
 	cfg := DefaultConfig()
@@ -16,6 +16,21 @@ func TestDefaultConfigProfilingDefaults(t *testing.T) {
 	}
 	if cfg.Profiling.ListenAddr != "127.0.0.1:6061" {
 		t.Fatalf("profiling.listen_addr default = %q, want %q", cfg.Profiling.ListenAddr, "127.0.0.1:6061")
+	}
+	if cfg.Sync.BatchSize != 256 {
+		t.Fatalf("sync.batch_size default = %d, want %d", cfg.Sync.BatchSize, 256)
+	}
+	if cfg.Sync.Concurrency != 12 {
+		t.Fatalf("sync.concurrency default = %d, want %d", cfg.Sync.Concurrency, 12)
+	}
+	if cfg.RPC.ReadTimeout != 30 {
+		t.Fatalf("rpc.read_timeout default = %d, want 30", cfg.RPC.ReadTimeout)
+	}
+	if cfg.RPC.WriteTimeout != 30 {
+		t.Fatalf("rpc.write_timeout default = %d, want 30", cfg.RPC.WriteTimeout)
+	}
+	if cfg.Subscription.MaxSubscribers != 1024 {
+		t.Fatalf("subscription.max_subscribers default = %d, want 1024", cfg.Subscription.MaxSubscribers)
 	}
 }
 

@@ -124,7 +124,7 @@ func (s *Service) BlobIncluded(ctx context.Context, height uint64, namespace []b
 }
 
 // BlobSubscribe creates a subscription for blobs in the given namespace.
-func (s *Service) BlobSubscribe(namespace types.Namespace) *Subscription {
+func (s *Service) BlobSubscribe(namespace types.Namespace) (*Subscription, error) {
 	return s.notifier.Subscribe([]types.Namespace{namespace})
 }
 
@@ -160,7 +160,7 @@ func (s *Service) HeaderNetworkHead(ctx context.Context) (json.RawMessage, error
 }
 
 // HeaderSubscribe creates a subscription for all new headers.
-func (s *Service) HeaderSubscribe() *Subscription {
+func (s *Service) HeaderSubscribe() (*Subscription, error) {
 	return s.notifier.Subscribe(nil)
 }
 

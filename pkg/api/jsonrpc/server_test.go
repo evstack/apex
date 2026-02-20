@@ -194,7 +194,7 @@ func TestJSONRPCHeaderGetByHeight(t *testing.T) {
 		RawHeader: []byte(`{"height":"42"}`),
 	}
 
-	notifier := api.NewNotifier(16, zerolog.Nop())
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	srv := NewServer(svc, zerolog.Nop())
 
@@ -217,7 +217,7 @@ func TestJSONRPCHeaderLocalHead(t *testing.T) {
 		RawHeader: []byte(`{"height":"100"}`),
 	}
 
-	notifier := api.NewNotifier(16, zerolog.Nop())
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	srv := NewServer(svc, zerolog.Nop())
 
@@ -238,7 +238,7 @@ func TestJSONRPCHeaderNetworkHead(t *testing.T) {
 		},
 	}
 
-	notifier := api.NewNotifier(16, zerolog.Nop())
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
 	svc := api.NewService(newMockStore(), ft, nil, notifier, zerolog.Nop())
 	srv := NewServer(svc, zerolog.Nop())
 
@@ -258,7 +258,7 @@ func TestJSONRPCBlobGetAll(t *testing.T) {
 		{Height: 10, Namespace: ns, Data: []byte("d1"), Commitment: []byte("c1"), Index: 0},
 	}
 
-	notifier := api.NewNotifier(16, zerolog.Nop())
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	srv := NewServer(svc, zerolog.Nop())
 
@@ -283,7 +283,7 @@ func TestJSONRPCBlobGetByCommitment(t *testing.T) {
 		{Height: 10, Namespace: ns, Data: []byte("d1"), Commitment: []byte("c1"), Index: 0},
 	}
 
-	notifier := api.NewNotifier(16, zerolog.Nop())
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
 	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
 	srv := NewServer(svc, zerolog.Nop())
 
@@ -311,7 +311,7 @@ func TestJSONRPCBlobGetByCommitment(t *testing.T) {
 }
 
 func TestJSONRPCStubMethods(t *testing.T) {
-	notifier := api.NewNotifier(16, zerolog.Nop())
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
 	svc := api.NewService(newMockStore(), &mockFetcher{}, nil, notifier, zerolog.Nop())
 	srv := NewServer(svc, zerolog.Nop())
 

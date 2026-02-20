@@ -53,6 +53,8 @@ type S3Config struct {
 type RPCConfig struct {
 	ListenAddr     string `yaml:"listen_addr"`
 	GRPCListenAddr string `yaml:"grpc_listen_addr"`
+	ReadTimeout    int    `yaml:"read_timeout"`  // in seconds
+	WriteTimeout   int    `yaml:"write_timeout"` // in seconds
 }
 
 // SyncConfig configures the sync coordinator.
@@ -64,7 +66,8 @@ type SyncConfig struct {
 
 // SubscriptionConfig configures API event subscriptions.
 type SubscriptionConfig struct {
-	BufferSize int `yaml:"buffer_size"`
+	BufferSize     int `yaml:"buffer_size"`
+	MaxSubscribers int `yaml:"max_subscribers"`
 }
 
 // MetricsConfig configures Prometheus metrics.
@@ -99,13 +102,16 @@ func DefaultConfig() Config {
 		RPC: RPCConfig{
 			ListenAddr:     ":8080",
 			GRPCListenAddr: ":9090",
+			ReadTimeout:    30,
+			WriteTimeout:   30,
 		},
 		Sync: SyncConfig{
-			BatchSize:   64,
-			Concurrency: 4,
+			BatchSize:   256,
+			Concurrency: 12,
 		},
 		Subscription: SubscriptionConfig{
-			BufferSize: 64,
+			BufferSize:     64,
+			MaxSubscribers: 1024,
 		},
 		Metrics: MetricsConfig{
 			Enabled:    true,

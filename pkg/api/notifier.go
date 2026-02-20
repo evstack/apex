@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -32,24 +33,30 @@ func (s *Subscription) Events() <-chan HeightEvent {
 
 // Notifier fans out height events to subscribed API clients.
 type Notifier struct {
-	mu          sync.RWMutex
-	subscribers map[uint64]*Subscription
-	nextID      atomic.Uint64
-	bufferSize  int
-	metrics     metrics.Recorder
-	log         zerolog.Logger
+	mu             sync.RWMutex
+	subscribers    map[uint64]*Subscription
+	nextID         atomic.Uint64
+	bufferSize     int
+	maxSubscribers int
+	metrics        metrics.Recorder
+	log            zerolog.Logger
 }
 
-// NewNotifier creates a Notifier with the given per-subscriber buffer size.
-func NewNotifier(bufferSize int, log zerolog.Logger) *Notifier {
+// NewNotifier creates a Notifier with the given per-subscriber buffer size
+// and maximum number of concurrent subscribers.
+func NewNotifier(bufferSize, maxSubscribers int, log zerolog.Logger) *Notifier {
 	if bufferSize <= 0 {
 		bufferSize = 64
 	}
+	if maxSubscribers <= 0 {
+		maxSubscribers = 1024
+	}
 	return &Notifier{
-		subscribers: make(map[uint64]*Subscription),
-		bufferSize:  bufferSize,
-		metrics:     metrics.Nop(),
-		log:         log.With().Str("component", "notifier").Logger(),
+		subscribers:    make(map[uint64]*Subscription),
+		bufferSize:     bufferSize,
+		maxSubscribers: maxSubscribers,
+		metrics:        metrics.Nop(),
+		log:            log.With().Str("component", "notifier").Logger(),
 	}
 }
 
@@ -60,7 +67,15 @@ func (n *Notifier) SetMetrics(m metrics.Recorder) {
 
 // Subscribe creates a new subscription. If namespaces is empty, all blobs are
 // delivered. The returned Subscription must be cleaned up via Unsubscribe.
-func (n *Notifier) Subscribe(namespaces []types.Namespace) *Subscription {
+// Returns an error if the maximum number of subscribers has been reached.
+func (n *Notifier) Subscribe(namespaces []types.Namespace) (*Subscription, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if len(n.subscribers) >= n.maxSubscribers {
+		return nil, fmt.Errorf("maximum subscribers reached (%d)", n.maxSubscribers)
+	}
+
 	id := n.nextID.Add(1)
 	nsSet := make(map[types.Namespace]struct{}, len(namespaces))
 	for _, ns := range namespaces {
@@ -73,13 +88,11 @@ func (n *Notifier) Subscribe(namespaces []types.Namespace) *Subscription {
 		namespaces: nsSet,
 	}
 
-	n.mu.Lock()
 	n.subscribers[id] = sub
-	n.mu.Unlock()
 
 	n.log.Debug().Uint64("sub_id", id).Int("namespaces", len(namespaces)).Msg("new subscription")
 	n.metrics.SetActiveSubscriptions(len(n.subscribers))
-	return sub
+	return sub, nil
 }
 
 // Unsubscribe removes a subscription and closes its channel.

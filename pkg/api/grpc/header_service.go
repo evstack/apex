@@ -59,7 +59,10 @@ func (s *HeaderServiceServer) NetworkHead(ctx context.Context, _ *pb.NetworkHead
 }
 
 func (s *HeaderServiceServer) Subscribe(_ *pb.HeaderServiceSubscribeRequest, stream grpc.ServerStreamingServer[pb.HeaderServiceSubscribeResponse]) error {
-	sub := s.svc.HeaderSubscribe()
+	sub, err := s.svc.HeaderSubscribe()
+	if err != nil {
+		return status.Errorf(codes.ResourceExhausted, "subscribe: %v", err)
+	}
 	defer s.svc.Notifier().Unsubscribe(sub)
 
 	ctx := stream.Context()

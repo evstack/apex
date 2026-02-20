@@ -112,7 +112,7 @@ func startCmd() *cobra.Command {
 				Str("datasource_type", cfg.DataSource.Type).
 				Int("namespaces", len(cfg.DataSource.Namespaces))
 			if cfg.DataSource.Type == "app" {
-				startLog = startLog.Str("app_url", cfg.DataSource.CelestiaAppURL)
+				startLog = startLog.Str("app_grpc_addr", cfg.DataSource.CelestiaAppGRPCAddr)
 			} else {
 				startLog = startLog.Str("node_url", cfg.DataSource.CelestiaNodeURL)
 			}
@@ -168,7 +168,7 @@ func setupProfiling(cfg *config.Config) *profile.Server {
 func openDataSource(ctx context.Context, cfg *config.Config) (fetch.DataFetcher, fetch.ProofForwarder, error) {
 	switch cfg.DataSource.Type {
 	case "app":
-		appFetcher, err := fetch.NewCelestiaAppFetcher(cfg.DataSource.CelestiaAppURL, cfg.DataSource.AuthToken, log.Logger)
+		appFetcher, err := fetch.NewCelestiaAppFetcher(cfg.DataSource.CelestiaAppGRPCAddr, cfg.DataSource.AuthToken, log.Logger)
 		if err != nil {
 			return nil, nil, fmt.Errorf("create celestia-app fetcher: %w", err)
 		}

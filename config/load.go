@@ -36,8 +36,8 @@ data_source:
   # Celestia DA node RPC endpoint (required when type: "node")
   celestia_node_url: "http://localhost:26658"
 
-  # Celestia-app CometBFT RPC endpoint (required when type: "app")
-  # celestia_app_url: "http://localhost:26657"
+  # Celestia-app Cosmos SDK gRPC endpoint (required when type: "app")
+  # celestia_app_grpc_addr: "localhost:9090"
 
   # Auth token: set via APEX_AUTH_TOKEN env var (not read from this file).
 
@@ -141,8 +141,8 @@ func validateDataSource(ds *DataSourceConfig) error {
 			return fmt.Errorf("data_source.celestia_node_url is required for type \"node\"")
 		}
 	case "app":
-		if ds.CelestiaAppURL == "" {
-			return fmt.Errorf("data_source.celestia_app_url is required for type \"app\"")
+		if ds.CelestiaAppGRPCAddr == "" {
+			return fmt.Errorf("data_source.celestia_app_grpc_addr is required for type \"app\"")
 		}
 	default:
 		return fmt.Errorf("data_source.type %q is invalid; must be \"node\" or \"app\"", ds.Type)

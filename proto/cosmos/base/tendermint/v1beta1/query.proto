@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package cosmos.base.tendermint.v1beta1;
+
+option go_package = "github.com/evstack/apex/pkg/api/grpc/gen/cosmos/base/tendermint/v1beta1;cometpb";
+
+import "google/protobuf/timestamp.proto";
+
+// Service provides access to CometBFT block data via Cosmos SDK gRPC.
+// Only the subset needed by CelestiaAppFetcher is defined here.
+service Service {
+  rpc GetBlockByHeight(GetBlockByHeightRequest) returns (GetBlockByHeightResponse);
+  rpc GetLatestBlock(GetLatestBlockRequest) returns (GetLatestBlockResponse);
+}
+
+message GetBlockByHeightRequest {
+  int64 height = 1;
+}
+
+message GetBlockByHeightResponse {
+  BlockID block_id = 1;
+  Block block = 2;
+}
+
+message GetLatestBlockRequest {}
+
+message GetLatestBlockResponse {
+  BlockID block_id = 1;
+  Block block = 2;
+}
+
+message Block {
+  Header header = 1;
+  Data data = 2;
+}
+
+message Header {
+  // Field numbers match CometBFT's types.proto Header.
+  bytes chain_id = 3;
+  int64 height = 4;
+  google.protobuf.Timestamp time = 7;
+  bytes data_hash = 10;
+}
+
+message Data {
+  repeated bytes txs = 1;
+}
+
+message BlockID {
+  bytes hash = 1;
+}

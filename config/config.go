@@ -20,13 +20,13 @@ type Config struct {
 
 // DataSourceConfig configures the Celestia data source.
 // Type selects the backend: "node" (default) uses a Celestia DA node,
-// "app" uses a celestia-app consensus node via CometBFT RPC.
+// "app" uses a celestia-app consensus node via Cosmos SDK gRPC.
 type DataSourceConfig struct {
-	Type            string   `yaml:"type"` // "node" (default) or "app"
-	CelestiaNodeURL string   `yaml:"celestia_node_url"`
-	CelestiaAppURL  string   `yaml:"celestia_app_url"`
-	AuthToken       string   `yaml:"-"` // populated only via APEX_AUTH_TOKEN env var
-	Namespaces      []string `yaml:"namespaces"`
+	Type                string   `yaml:"type"` // "node" (default) or "app"
+	CelestiaNodeURL     string   `yaml:"celestia_node_url"`
+	CelestiaAppGRPCAddr string   `yaml:"celestia_app_grpc_addr"`
+	AuthToken           string   `yaml:"-"` // populated only via APEX_AUTH_TOKEN env var
+	Namespaces          []string `yaml:"namespaces"`
 }
 
 // StorageConfig configures the persistence backend.

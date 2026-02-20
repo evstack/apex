@@ -129,6 +129,16 @@ func detectLayout(db kvDB, requested string) (layout string, version string, err
 	return layoutV1, version, nil
 }
 
+const (
+	// maxPartsTotal is the maximum number of block parts we will read.
+	// CometBFT uses 64KB parts, so 4096 parts = 256MB which is well above
+	// any real block size.
+	maxPartsTotal = 4096
+
+	// maxBlockSize is the maximum assembled block size (128MB).
+	maxBlockSize = 128 << 20
+)
+
 // FetchHeight returns header and namespace-filtered blobs for one height.
 func (s *Source) FetchHeight(_ context.Context, height uint64, namespaces []types.Namespace) (*types.Header, []types.Blob, error) {
 	metaKey := blockMetaKey(s.layout, height)
@@ -145,8 +155,11 @@ func (s *Source) FetchHeight(_ context.Context, height uint64, namespaces []type
 	if meta.PartsTotal == 0 {
 		return nil, nil, fmt.Errorf("invalid part set total 0 at height %d", height)
 	}
+	if meta.PartsTotal > maxPartsTotal {
+		return nil, nil, fmt.Errorf("part set total %d exceeds maximum %d at height %d", meta.PartsTotal, maxPartsTotal, height)
+	}
 
-	var rawBlock []byte
+	rawBlock := make([]byte, 0, meta.PartsTotal*65536) // 64KB per part estimate
 	for idx := uint32(0); idx < meta.PartsTotal; idx++ {
 		partKey := blockPartKey(s.layout, height, idx)
 		partRaw, err := s.db.Get(partKey)
@@ -156,6 +169,9 @@ func (s *Source) FetchHeight(_ context.Context, height uint64, namespaces []type
 		partBytes, err := decodePartBytes(partRaw)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decode block part %d at height %d: %w", idx, height, err)
+		}
+		if len(rawBlock)+len(partBytes) > maxBlockSize {
+			return nil, nil, fmt.Errorf("assembled block exceeds %d bytes at height %d", maxBlockSize, height)
 		}
 		rawBlock = append(rawBlock, partBytes...)
 	}
@@ -526,6 +542,18 @@ func (l *levelDB) Get(key []byte) ([]byte, error) {
 
 func (l *levelDB) Close() error { return l.db.Close() }
 
+// probeKV checks whether the DB contains a known CometBFT blockstore marker.
+// Returns true if either "version" (v2) or "blockStore" (v1) key is readable.
+func probeKV(db kvDB) bool {
+	if _, err := db.Get([]byte("version")); err == nil {
+		return true
+	}
+	if _, err := db.Get([]byte("blockStore")); err == nil {
+		return true
+	}
+	return false
+}
+
 func openKV(path, backend string) (kvDB, string, error) {
 	switch backend {
 	case "pebble":
@@ -541,13 +569,24 @@ func openKV(path, backend string) (kvDB, string, error) {
 		}
 		return &levelDB{db: db}, "leveldb", nil
 	case "auto":
+		// Pebble can sometimes open LevelDB files due to format compatibility.
+		// After opening, probe for a known marker key to confirm the backend
+		// is reading valid data before committing to it.
 		if db, err := pebble.Open(path, &pebble.Options{ReadOnly: true}); err == nil {
-			return &pebbleDB{db: db}, "pebble", nil
+			kv := &pebbleDB{db: db}
+			if probeKV(kv) {
+				return kv, "pebble", nil
+			}
+			_ = kv.Close()
 		}
 		if db, err := leveldb.OpenFile(path, &ldbopt.Options{ReadOnly: true}); err == nil {
-			return &levelDB{db: db}, "leveldb", nil
+			kv := &levelDB{db: db}
+			if probeKV(kv) {
+				return kv, "leveldb", nil
+			}
+			_ = kv.Close()
 		}
-		return nil, "", fmt.Errorf("open blockstore %q: failed with both pebble and leveldb", path)
+		return nil, "", fmt.Errorf("open blockstore %q: no backend could read marker keys", path)
 	default:
 		return nil, "", fmt.Errorf("invalid backend %q: must be auto|pebble|leveldb", backend)
 	}

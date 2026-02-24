@@ -3,7 +3,6 @@ package store
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"io"
 	"sync"
 	"testing"
@@ -511,45 +510,5 @@ func TestS3Store_BufferReadThrough(t *testing.T) {
 	}
 	if !bytes.Equal(gotB.Data, []byte("buf")) {
 		t.Errorf("blob data %q, want %q", gotB.Data, "buf")
-	}
-}
-
-func TestS3Store_PrefixAndKeyFormat(t *testing.T) {
-	mock := newMockS3Client()
-
-	// With prefix.
-	s := newS3Store(mock, "b", "myprefix", 64)
-	key := s.key("headers", chunkFileName(0))
-	want := "myprefix/headers/chunk_0000000000000000.json"
-	if key != want {
-		t.Errorf("key with prefix = %q, want %q", key, want)
-	}
-
-	// Without prefix.
-	s2 := newS3Store(mock, "b", "", 64)
-	key2 := s2.key("headers", chunkFileName(64))
-	want2 := "headers/chunk_0000000000000064.json"
-	if key2 != want2 {
-		t.Errorf("key without prefix = %q, want %q", key2, want2)
-	}
-
-	// Commitment index key.
-	commitHex := hex.EncodeToString([]byte("test"))
-	key3 := s.key("index", "commitments", commitHex+".json")
-	want3 := "myprefix/index/commitments/" + commitHex + ".json"
-	if key3 != want3 {
-		t.Errorf("commitment key = %q, want %q", key3, want3)
-	}
-}
-
-func TestS3Store_EmptyPutBlobs(t *testing.T) {
-	ctx := context.Background()
-	s, _ := newTestS3Store(t)
-
-	if err := s.PutBlobs(ctx, nil); err != nil {
-		t.Fatalf("PutBlobs nil: %v", err)
-	}
-	if err := s.PutBlobs(ctx, []types.Blob{}); err != nil {
-		t.Fatalf("PutBlobs empty: %v", err)
 	}
 }

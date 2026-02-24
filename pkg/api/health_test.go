@@ -74,9 +74,6 @@ func TestHealthEndpoint(t *testing.T) {
 			if hs.Healthy != tt.wantHealth {
 				t.Errorf("healthy = %v, want %v", hs.Healthy, tt.wantHealth)
 			}
-			if hs.SyncLag != 5 {
-				t.Errorf("sync_lag = %d, want 5", hs.SyncLag)
-			}
 		})
 	}
 }

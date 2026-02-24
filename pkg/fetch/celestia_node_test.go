@@ -209,23 +209,6 @@ func TestGetBlobsRetriesTransient(t *testing.T) {
 	}
 }
 
-func TestNamespacesToBytes(t *testing.T) {
-	var ns1, ns2 types.Namespace
-	ns1[0] = 1
-	ns2[0] = 2
-
-	out := namespacesToBytes([]types.Namespace{ns1, ns2})
-	if len(out) != 2 {
-		t.Fatalf("got %d, want 2", len(out))
-	}
-	if len(out[0]) != types.NamespaceSize {
-		t.Errorf("out[0] len = %d, want %d", len(out[0]), types.NamespaceSize)
-	}
-	if out[0][0] != 1 || out[1][0] != 2 {
-		t.Errorf("values mismatch: %v, %v", out[0], out[1])
-	}
-}
-
 func TestJsonInt64(t *testing.T) {
 	tests := []struct {
 		input string

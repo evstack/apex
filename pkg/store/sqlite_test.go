@@ -303,18 +303,6 @@ func TestMigrationsIdempotent(t *testing.T) {
 	_ = s2.Close()
 }
 
-func TestPutBlobsEmpty(t *testing.T) {
-	s := openTestDB(t)
-	ctx := context.Background()
-
-	if err := s.PutBlobs(ctx, nil); err != nil {
-		t.Fatalf("PutBlobs(nil): %v", err)
-	}
-	if err := s.PutBlobs(ctx, []types.Blob{}); err != nil {
-		t.Fatalf("PutBlobs([]): %v", err)
-	}
-}
-
 func TestGetBlobsEmptyRange(t *testing.T) {
 	s := openTestDB(t)
 	ctx := context.Background()

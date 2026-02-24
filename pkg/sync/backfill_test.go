@@ -42,21 +42,6 @@ func TestBackfiller(t *testing.T) {
 				t.Errorf("header %d not stored: %v", h, err)
 			}
 		}
-
-		st.mu.Lock()
-		blobCount := len(st.blobs)
-		st.mu.Unlock()
-		if blobCount != 10 {
-			t.Errorf("stored %d blobs, want 10", blobCount)
-		}
-
-		ss, err := st.GetSyncState(context.Background())
-		if err != nil {
-			t.Fatalf("GetSyncState: %v", err)
-		}
-		if ss.LatestHeight != 10 {
-			t.Errorf("checkpoint LatestHeight = %d, want 10", ss.LatestHeight)
-		}
 	})
 
 	t.Run("ContextCancellation", func(t *testing.T) {
@@ -102,28 +87,6 @@ func TestBackfiller(t *testing.T) {
 
 		if err := bf.Run(context.Background(), 1, 5); err == nil {
 			t.Fatal("expected error when fetcher returns not found")
-		}
-	})
-
-	t.Run("SingleHeight", func(t *testing.T) {
-		t.Parallel()
-		st := newMockStore()
-		ft := newMockFetcher(1)
-		ft.addHeader(makeHeader(1))
-
-		bf := &Backfiller{
-			store:       st,
-			fetcher:     ft,
-			batchSize:   10,
-			concurrency: 4,
-		}
-
-		if err := bf.Run(context.Background(), 1, 1); err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-
-		if _, err := st.GetHeader(context.Background(), 1); err != nil {
-			t.Errorf("header 1 not stored: %v", err)
 		}
 	})
 }

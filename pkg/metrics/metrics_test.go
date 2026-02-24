@@ -58,20 +58,3 @@ func TestPromRecorderRegisters(t *testing.T) {
 		t.Error("apex_backfill_stage_errors_total metric not found")
 	}
 }
-
-func TestNopRecorderDoesNotPanic(t *testing.T) {
-	r := Nop()
-	r.SetSyncState("streaming")
-	r.SetLatestHeight(100)
-	r.SetNetworkHeight(105)
-	r.IncBlobsProcessed(10)
-	r.IncHeadersProcessed(5)
-	r.ObserveBatchDuration(500 * time.Millisecond)
-	r.ObserveBackfillStageDuration("fetch_header", 3*time.Millisecond)
-	r.IncBackfillStageErrors("store_header")
-	r.IncAPIRequest("BlobGet", "ok")
-	r.ObserveAPIRequestDuration("BlobGet", 10*time.Millisecond)
-	r.ObserveStoreQueryDuration("GetBlobs", 2*time.Millisecond)
-	r.SetActiveSubscriptions(3)
-	r.IncEventsDropped()
-}

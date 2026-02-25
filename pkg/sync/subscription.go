@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/evstack/apex/pkg/store"
 	"github.com/evstack/apex/pkg/types"
 )
+
+const streamingLogInterval = 30 * time.Second
 
 // SubscriptionManager processes new headers from a live subscription.
 type SubscriptionManager struct {
@@ -45,10 +48,20 @@ func (sm *SubscriptionManager) Run(ctx context.Context) error {
 		networkHeight = ss.NetworkHeight
 	}
 
+	ticker := time.NewTicker(streamingLogInterval)
+	defer ticker.Stop()
+	var processed uint64
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-ticker.C:
+			sm.log.Info().
+				Uint64("height", lastHeight).
+				Uint64("blocks", processed).
+				Msg("streaming progress")
+			processed = 0
 		case hdr, ok := <-ch:
 			if !ok {
 				// Channel closed (disconnect or ctx cancelled).
@@ -72,6 +85,7 @@ func (sm *SubscriptionManager) Run(ctx context.Context) error {
 			}
 
 			lastHeight = hdr.Height
+			processed++
 		}
 	}
 }

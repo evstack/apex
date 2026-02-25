@@ -213,12 +213,20 @@ func mapBlockResponse(blockID *cometpb.BlockID, block *cometpb.Block) (*types.He
 	hdr := block.Header
 	t := hdr.Time.AsTime()
 
-	// Store only the header sub-object, not the full block (which includes
-	// last_commit signatures, evidence, and transaction data — all stored
-	// separately or unused).
-	raw, err := json.Marshal(hdr)
+	// Wrap in envelope matching the canonical shape used by celestia_node and
+	// backfill: {"header": ..., "commit": ...}. The gRPC response does not
+	// include a separate commit object, so we synthesize a minimal one from
+	// the block_id.
+	envelope := map[string]any{
+		"header": hdr,
+		"commit": map[string]any{
+			"height":   fmt.Sprintf("%d", hdr.Height),
+			"block_id": blockID,
+		},
+	}
+	raw, err := json.Marshal(envelope)
 	if err != nil {
-		return nil, fmt.Errorf("marshal raw header: %w", err)
+		return nil, fmt.Errorf("marshal raw header envelope: %w", err)
 	}
 
 	return &types.Header{

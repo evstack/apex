@@ -232,55 +232,79 @@ func TestJsonInt64(t *testing.T) {
 }
 
 func TestTrimRawHeader(t *testing.T) {
-	raw := json.RawMessage(`{
-		"header": {"height":"100","time":"2025-01-01T00:00:00Z","chain_id":"test"},
-		"dah": {"row_roots":["AAAA","BBBB"],"column_roots":["CCCC","DDDD"]},
-		"validator_set": {"validators":[{"address":"abc","pub_key":{"type":"ed25519","value":"xxx"}}]},
-		"commit": {"height":"100","block_id":{"hash":"1234"},"signatures":[{"validator_address":"abc","signature":"sig"}]}
-	}`)
-
-	trimmed := TrimRawHeader(raw)
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(trimmed, &obj); err != nil {
-		t.Fatalf("unmarshal trimmed: %v", err)
+	tests := []struct {
+		name            string
+		input           []byte
+		expectedPresent []string // top-level keys that must exist
+		expectedAbsent  []string // top-level keys that must not exist
+		checkCommit     bool     // if true, verify commit internals
+		expectUnchanged bool     // if true, output must equal input
+		expectSmaller   bool     // if true, output must be smaller than input
+	}{
+		{
+			name: "valid header trims heavy fields",
+			input: []byte(`{
+				"header": {"height":"100","time":"2025-01-01T00:00:00Z","chain_id":"test"},
+				"dah": {"row_roots":["AAAA","BBBB"],"column_roots":["CCCC","DDDD"]},
+				"validator_set": {"validators":[{"address":"abc","pub_key":{"type":"ed25519","value":"xxx"}}]},
+				"commit": {"height":"100","block_id":{"hash":"1234"},"signatures":[{"validator_address":"abc","signature":"sig"}]}
+			}`),
+			expectedPresent: []string{"header", "commit"},
+			expectedAbsent:  []string{"dah", "validator_set"},
+			checkCommit:     true,
+			expectSmaller:   true,
+		},
+		{
+			name:            "invalid JSON returned as-is",
+			input:           []byte(`not json`),
+			expectUnchanged: true,
+		},
 	}
 
-	if _, ok := obj["dah"]; ok {
-		t.Error("dah should be removed")
-	}
-	if _, ok := obj["validator_set"]; ok {
-		t.Error("validator_set should be removed")
-	}
-	if _, ok := obj["header"]; !ok {
-		t.Error("header should be preserved")
-	}
-	if _, ok := obj["commit"]; !ok {
-		t.Fatal("commit should be preserved")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			trimmed := TrimRawHeader(tt.input)
 
-	// commit should have block_id but not signatures
-	var commit map[string]json.RawMessage
-	if err := json.Unmarshal(obj["commit"], &commit); err != nil {
-		t.Fatalf("unmarshal commit: %v", err)
-	}
-	if _, ok := commit["block_id"]; !ok {
-		t.Error("commit.block_id should be preserved")
-	}
-	if _, ok := commit["signatures"]; ok {
-		t.Error("commit.signatures should be removed")
-	}
+			if tt.expectUnchanged {
+				if string(trimmed) != string(tt.input) {
+					t.Error("expected output to equal input")
+				}
+				return
+			}
 
-	// Verify trimmed is much smaller
-	if len(trimmed) >= len(raw) {
-		t.Errorf("trimmed (%d bytes) should be smaller than original (%d bytes)", len(trimmed), len(raw))
-	}
-}
+			var obj map[string]json.RawMessage
+			if err := json.Unmarshal(trimmed, &obj); err != nil {
+				t.Fatalf("unmarshal trimmed: %v", err)
+			}
 
-func TestTrimRawHeaderInvalidJSON(t *testing.T) {
-	raw := []byte(`not json`)
-	trimmed := TrimRawHeader(raw)
-	if string(trimmed) != string(raw) {
-		t.Error("invalid JSON should be returned as-is")
+			for _, key := range tt.expectedPresent {
+				if _, ok := obj[key]; !ok {
+					t.Errorf("%s should be preserved", key)
+				}
+			}
+			for _, key := range tt.expectedAbsent {
+				if _, ok := obj[key]; ok {
+					t.Errorf("%s should be removed", key)
+				}
+			}
+
+			if tt.checkCommit {
+				var commit map[string]json.RawMessage
+				if err := json.Unmarshal(obj["commit"], &commit); err != nil {
+					t.Fatalf("unmarshal commit: %v", err)
+				}
+				if _, ok := commit["block_id"]; !ok {
+					t.Error("commit.block_id should be preserved")
+				}
+				if _, ok := commit["signatures"]; ok {
+					t.Error("commit.signatures should be removed")
+				}
+			}
+
+			if tt.expectSmaller && len(trimmed) >= len(tt.input) {
+				t.Errorf("trimmed (%d bytes) should be smaller than original (%d bytes)", len(trimmed), len(tt.input))
+			}
+		})
 	}
 }
 

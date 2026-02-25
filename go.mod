@@ -10,7 +10,6 @@ require (
 	github.com/cockroachdb/pebble v1.1.5
 	github.com/filecoin-project/go-jsonrpc v0.10.1
 	github.com/google/orderedcode v0.0.1
-	github.com/gorilla/websocket v1.4.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.10.2
@@ -51,6 +50,7 @@ require (
 	github.com/golang/groupcache v0.0.0-20190702054246-869f871628b6 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/ipfs/go-log/v2 v2.0.8 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect

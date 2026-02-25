@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -184,12 +186,17 @@ func (s *Source) FetchHeight(_ context.Context, height uint64, namespaces []type
 		return nil, nil, fmt.Errorf("height mismatch in block: got %d want %d", block.Height, height)
 	}
 
+	rawHeader, err := buildMinimalRawHeader(height, block.Time, block.DataHash, meta.BlockHash)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build minimal raw header at height %d: %w", height, err)
+	}
+
 	hdr := &types.Header{
 		Height:    height,
 		Hash:      meta.BlockHash,
 		DataHash:  block.DataHash,
 		Time:      block.Time,
-		RawHeader: rawBlock,
+		RawHeader: rawHeader,
 	}
 
 	if len(namespaces) == 0 {
@@ -708,6 +715,30 @@ func splitIntoParts(raw []byte, partSize int) [][]byte {
 		out = append(out, append([]byte(nil), raw[i:j]...))
 	}
 	return out
+}
+
+// buildMinimalRawHeader synthesizes a small JSON object from the decoded block
+// fields. The backfill source reads raw protobuf, so we build the JSON that
+// consumers (ev-node) expect rather than storing the full protobuf blob.
+func buildMinimalRawHeader(height uint64, t time.Time, dataHash, blockHash []byte) ([]byte, error) {
+	obj := map[string]any{
+		"header": map[string]any{
+			"height":    fmt.Sprintf("%d", height),
+			"time":      t.Format(time.RFC3339Nano),
+			"data_hash": hex.EncodeToString(dataHash),
+		},
+		"commit": map[string]any{
+			"height": fmt.Sprintf("%d", height),
+			"block_id": map[string]any{
+				"hash": hex.EncodeToString(blockHash),
+			},
+		},
+	}
+	raw, err := json.Marshal(obj)
+	if err != nil {
+		return nil, fmt.Errorf("marshal minimal raw header: %w", err)
+	}
+	return raw, nil
 }
 
 func writeTestBlock(path, backend, layout string, height uint64, hash, dataHash []byte, t time.Time, txs [][]byte, partSize int) error {

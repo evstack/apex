@@ -275,6 +275,10 @@ func (f *CelestiaNodeFetcher) forwardHeaders(ctx context.Context, rawCh <-chan j
 
 // pollHeaders polls GetNetworkHead at 1s intervals, emitting new headers when
 // the height advances. Used as a fallback when header.Subscribe is unavailable.
+// NOTE: only the current chain tip is emitted; intermediate heights produced
+// between ticks are skipped. The sync coordinator handles this via gap detection
+// and re-backfill, so no data is lost — but this path is higher latency than
+// a true subscription.
 func (f *CelestiaNodeFetcher) pollHeaders(ctx context.Context) <-chan *types.Header {
 	out := make(chan *types.Header, 64)
 	go func() {

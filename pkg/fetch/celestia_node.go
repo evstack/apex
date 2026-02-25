@@ -400,8 +400,47 @@ func mapHeader(raw json.RawMessage) (*types.Header, error) {
 		Hash:      []byte(h.Commit.BlockID.Hash),
 		DataHash:  []byte(h.Header.DataHash),
 		Time:      t,
-		RawHeader: []byte(raw),
+		RawHeader: TrimRawHeader([]byte(raw)),
 	}, nil
+}
+
+// heavyHeaderKeys are top-level ExtendedHeader fields that are large and unused
+// by any consumer. Removing them reduces per-header storage from ~87KB to ~2KB.
+//
+//   - dah: Data Availability Header with row/column roots (~64KB, 73%)
+//   - validator_set: full validator public keys and voting power (~14KB, 16%)
+//   - commit.signatures: individual validator signatures (~10KB, 12%)
+var heavyHeaderKeys = []string{"dah", "validator_set"}
+
+// TrimRawHeader removes large, unused fields from a Celestia ExtendedHeader JSON
+// to reduce storage footprint. The remaining ~1KB "header" object plus "commit"
+// metadata are sufficient for all known consumers (ev-node only reads the timestamp).
+func TrimRawHeader(raw []byte) []byte {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return raw
+	}
+
+	for _, key := range heavyHeaderKeys {
+		delete(obj, key)
+	}
+
+	// Keep commit.block_id and commit.height but strip commit.signatures.
+	if commitRaw, ok := obj["commit"]; ok {
+		var commit map[string]json.RawMessage
+		if err := json.Unmarshal(commitRaw, &commit); err == nil {
+			delete(commit, "signatures")
+			if trimmed, err := json.Marshal(commit); err == nil {
+				obj["commit"] = trimmed
+			}
+		}
+	}
+
+	trimmed, err := json.Marshal(obj)
+	if err != nil {
+		return raw
+	}
+	return trimmed
 }
 
 func mapBlobs(raw json.RawMessage, height uint64) ([]types.Blob, error) {

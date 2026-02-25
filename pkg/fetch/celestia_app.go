@@ -213,7 +213,10 @@ func mapBlockResponse(blockID *cometpb.BlockID, block *cometpb.Block) (*types.He
 	hdr := block.Header
 	t := hdr.Time.AsTime()
 
-	raw, err := json.Marshal(block)
+	// Store only the header sub-object, not the full block (which includes
+	// last_commit signatures, evidence, and transaction data — all stored
+	// separately or unused).
+	raw, err := json.Marshal(hdr)
 	if err != nil {
 		return nil, fmt.Errorf("marshal raw header: %w", err)
 	}

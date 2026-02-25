@@ -231,6 +231,59 @@ func TestJsonInt64(t *testing.T) {
 	}
 }
 
+func TestTrimRawHeader(t *testing.T) {
+	raw := json.RawMessage(`{
+		"header": {"height":"100","time":"2025-01-01T00:00:00Z","chain_id":"test"},
+		"dah": {"row_roots":["AAAA","BBBB"],"column_roots":["CCCC","DDDD"]},
+		"validator_set": {"validators":[{"address":"abc","pub_key":{"type":"ed25519","value":"xxx"}}]},
+		"commit": {"height":"100","block_id":{"hash":"1234"},"signatures":[{"validator_address":"abc","signature":"sig"}]}
+	}`)
+
+	trimmed := TrimRawHeader(raw)
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &obj); err != nil {
+		t.Fatalf("unmarshal trimmed: %v", err)
+	}
+
+	if _, ok := obj["dah"]; ok {
+		t.Error("dah should be removed")
+	}
+	if _, ok := obj["validator_set"]; ok {
+		t.Error("validator_set should be removed")
+	}
+	if _, ok := obj["header"]; !ok {
+		t.Error("header should be preserved")
+	}
+	if _, ok := obj["commit"]; !ok {
+		t.Fatal("commit should be preserved")
+	}
+
+	// commit should have block_id but not signatures
+	var commit map[string]json.RawMessage
+	if err := json.Unmarshal(obj["commit"], &commit); err != nil {
+		t.Fatalf("unmarshal commit: %v", err)
+	}
+	if _, ok := commit["block_id"]; !ok {
+		t.Error("commit.block_id should be preserved")
+	}
+	if _, ok := commit["signatures"]; ok {
+		t.Error("commit.signatures should be removed")
+	}
+
+	// Verify trimmed is much smaller
+	if len(trimmed) >= len(raw) {
+		t.Errorf("trimmed (%d bytes) should be smaller than original (%d bytes)", len(trimmed), len(raw))
+	}
+}
+
+func TestTrimRawHeaderInvalidJSON(t *testing.T) {
+	raw := []byte(`not json`)
+	trimmed := TrimRawHeader(raw)
+	if string(trimmed) != string(raw) {
+		t.Error("invalid JSON should be returned as-is")
+	}
+}
+
 func TestHexBytes(t *testing.T) {
 	tests := []struct {
 		input string

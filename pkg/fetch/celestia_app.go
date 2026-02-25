@@ -29,11 +29,15 @@ type CelestiaAppFetcher struct {
 
 // bearerCreds implements grpc.PerRPCCredentials for bearer token auth.
 type bearerCreds struct {
-	token string
+	metadata map[string]string // cached; avoids allocation per RPC
+}
+
+func newBearerCreds(token string) bearerCreds {
+	return bearerCreds{metadata: map[string]string{"authorization": "Bearer " + token}}
 }
 
 func (b bearerCreds) GetRequestMetadata(_ context.Context, _ ...string) (map[string]string, error) {
-	return map[string]string{"authorization": "Bearer " + b.token}, nil
+	return b.metadata, nil
 }
 
 func (b bearerCreds) RequireTransportSecurity() bool { return false }
@@ -45,7 +49,7 @@ func NewCelestiaAppFetcher(grpcAddr, authToken string, log zerolog.Logger) (*Cel
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
 	if authToken != "" {
-		opts = append(opts, grpc.WithPerRPCCredentials(bearerCreds{token: authToken}))
+		opts = append(opts, grpc.WithPerRPCCredentials(newBearerCreds(authToken)))
 	}
 
 	conn, err := grpc.NewClient(grpcAddr, opts...)

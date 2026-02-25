@@ -53,6 +53,7 @@ const (
 	defaultRPCTimeout    = 8 * time.Second
 	defaultRPCMaxRetries = 2
 	defaultRPCRetryDelay = 100 * time.Millisecond
+	wsDialTimeout        = 10 * time.Second
 )
 
 // NewCelestiaNodeFetcher connects to a Celestia node at the given address.
@@ -184,8 +185,17 @@ func (f *CelestiaNodeFetcher) SubscribeHeaders(ctx context.Context) (<-chan *typ
 	return f.forwardHeaders(ctx, rawCh), nil
 }
 
+// wsSubscribeResult holds the outcome of a WS subscribe attempt.
+type wsSubscribeResult struct {
+	ch     <-chan json.RawMessage
+	closer jsonrpc.ClientCloser
+	err    error
+}
+
 // subscribeViaWS creates a separate WebSocket client for header subscriptions.
 // This handles the case where the main client uses HTTP (no channel support).
+// The connection attempt is bounded by wsDialTimeout; if the node doesn't
+// support WebSocket the goroutine is abandoned (cleaned up when ctx ends).
 func (f *CelestiaNodeFetcher) subscribeViaWS(ctx context.Context) (<-chan json.RawMessage, error) {
 	wsAddr := httpToWS(f.addr)
 	if wsAddr == f.addr {
@@ -194,30 +204,44 @@ func (f *CelestiaNodeFetcher) subscribeViaWS(ctx context.Context) (<-chan json.R
 
 	f.log.Info().Str("ws_addr", wsAddr).Msg("upgrading to WebSocket for header subscription")
 
-	var subAPI headerAPI
-	closer, err := jsonrpc.NewClient(ctx, wsAddr, "header", &subAPI, f.authHeader)
-	if err != nil {
-		return nil, fmt.Errorf("connect WS header client: %w", err)
-	}
+	// Run the WS dial + subscribe in a goroutine so we can timeout if the
+	// node doesn't accept WebSocket connections. The parent ctx is passed to
+	// NewClient because it controls the WS connection lifetime (not just dial).
+	done := make(chan wsSubscribeResult, 1)
+	go func() {
+		var subAPI headerAPI
+		closer, err := jsonrpc.NewClient(ctx, wsAddr, "header", &subAPI, f.authHeader)
+		if err != nil {
+			done <- wsSubscribeResult{err: fmt.Errorf("connect WS header client: %w", err)}
+			return
+		}
+		ch, err := subAPI.Subscribe(ctx)
+		if err != nil {
+			closer()
+			done <- wsSubscribeResult{err: fmt.Errorf("header.Subscribe via WS: %w", err)}
+			return
+		}
+		done <- wsSubscribeResult{ch: ch, closer: closer}
+	}()
 
-	f.mu.Lock()
-	old := f.subCloser
-	f.subCloser = closer
-	f.mu.Unlock()
-	if old != nil {
-		old()
-	}
-
-	rawCh, err := subAPI.Subscribe(ctx)
-	if err != nil {
-		closer()
+	select {
+	case r := <-done:
+		if r.err != nil {
+			return nil, r.err
+		}
 		f.mu.Lock()
-		f.subCloser = nil
+		old := f.subCloser
+		f.subCloser = r.closer
 		f.mu.Unlock()
-		return nil, fmt.Errorf("header.Subscribe via WS: %w", err)
+		if old != nil {
+			old()
+		}
+		return r.ch, nil
+	case <-time.After(wsDialTimeout):
+		return nil, fmt.Errorf("WS connection to %s timed out after %s", wsAddr, wsDialTimeout)
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
-
-	return rawCh, nil
 }
 
 // forwardHeaders maps raw JSON headers from a subscription channel to typed headers.

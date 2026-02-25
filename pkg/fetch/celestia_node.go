@@ -201,8 +201,12 @@ func (f *CelestiaNodeFetcher) subscribeViaWS(ctx context.Context) (<-chan json.R
 	}
 
 	f.mu.Lock()
+	old := f.subCloser
 	f.subCloser = closer
 	f.mu.Unlock()
+	if old != nil {
+		old()
+	}
 
 	rawCh, err := subAPI.Subscribe(ctx)
 	if err != nil {

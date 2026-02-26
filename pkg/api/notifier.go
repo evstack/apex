@@ -77,9 +77,13 @@ func (n *Notifier) Subscribe(namespaces []types.Namespace) (*Subscription, error
 	}
 
 	id := n.nextID.Add(1)
-	nsSet := make(map[types.Namespace]struct{}, len(namespaces))
-	for _, ns := range namespaces {
-		nsSet[ns] = struct{}{}
+
+	var nsSet map[types.Namespace]struct{}
+	if len(namespaces) > 0 {
+		nsSet = make(map[types.Namespace]struct{}, len(namespaces))
+		for _, ns := range namespaces {
+			nsSet[ns] = struct{}{}
+		}
 	}
 
 	sub := &Subscription{
@@ -161,13 +165,27 @@ func (n *Notifier) Publish(event HeightEvent) {
 
 // filterEvent returns an event with blobs filtered to the subscriber's
 // namespace set. If the subscriber watches all namespaces, the event is
-// returned as-is.
+// returned as-is. Avoids allocation when no blobs match.
 func (n *Notifier) filterEvent(event HeightEvent, sub *Subscription) HeightEvent {
 	if len(sub.namespaces) == 0 {
 		return event
 	}
 
-	filtered := make([]types.Blob, 0, len(event.Blobs))
+	// Count matches first to avoid allocating when nothing matches.
+	count := 0
+	for i := range event.Blobs {
+		if _, ok := sub.namespaces[event.Blobs[i].Namespace]; ok {
+			count++
+		}
+	}
+	if count == len(event.Blobs) {
+		return event // all match — no copy needed
+	}
+	if count == 0 {
+		return HeightEvent{Height: event.Height, Header: event.Header}
+	}
+
+	filtered := make([]types.Blob, 0, count)
 	for i := range event.Blobs {
 		if _, ok := sub.namespaces[event.Blobs[i].Namespace]; ok {
 			filtered = append(filtered, event.Blobs[i])

@@ -91,9 +91,9 @@ func NewCelestiaNodeFetcher(ctx context.Context, addr, token string, log zerolog
 func httpToWS(addr string) string {
 	switch {
 	case strings.HasPrefix(addr, "http://"):
-		return "ws://" + strings.TrimPrefix(addr, "http://")
+		return "ws://" + addr[len("http://"):]
 	case strings.HasPrefix(addr, "https://"):
-		return "wss://" + strings.TrimPrefix(addr, "https://")
+		return "wss://" + addr[len("https://"):]
 	default:
 		return addr
 	}
@@ -513,23 +513,26 @@ func isTransientRPCError(err error) bool {
 		return true
 	}
 	msg := strings.ToLower(err.Error())
-	for _, needle := range []string{
-		"eof",
-		"connection reset by peer",
-		"broken pipe",
-		"i/o timeout",
-		"timeout",
-		"temporarily unavailable",
-		"connection refused",
-		"503",
-		"504",
-		"502",
-	} {
+	for _, needle := range transientNeedles {
 		if strings.Contains(msg, needle) {
 			return true
 		}
 	}
 	return false
+}
+
+// transientNeedles is allocated once at package init to avoid per-call slice allocation.
+var transientNeedles = []string{
+	"eof",
+	"connection reset by peer",
+	"broken pipe",
+	"i/o timeout",
+	"timeout",
+	"temporarily unavailable",
+	"connection refused",
+	"503",
+	"504",
+	"502",
 }
 
 // jsonInt64 handles CometBFT's int64 fields encoded as JSON strings.

@@ -204,7 +204,7 @@ func (s *SQLiteStore) GetBlobs(ctx context.Context, ns types.Namespace, startHei
 	}
 	defer rows.Close() //nolint:errcheck
 
-	var blobs []types.Blob
+	blobs := make([]types.Blob, 0, 64) // preallocate to reduce append reallocations
 	for rows.Next() {
 		b, err := scanBlobRow(rows)
 		if err != nil {

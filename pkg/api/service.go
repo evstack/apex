@@ -70,7 +70,7 @@ func (s *Service) BlobGetByCommitment(ctx context.Context, commitment []byte) (j
 // limit=0 means no limit; offset=0 means no offset.
 // Pagination is applied to the aggregate result across all namespaces.
 func (s *Service) BlobGetAll(ctx context.Context, height uint64, namespaces []types.Namespace, limit, offset int) (json.RawMessage, error) {
-	var allBlobs []types.Blob
+	allBlobs := make([]types.Blob, 0, len(namespaces)*8) // preallocate for typical workload
 	for _, ns := range namespaces {
 		blobs, err := s.store.GetBlobs(ctx, ns, height, height, 0, 0)
 		if err != nil {
@@ -179,15 +179,25 @@ func (s *Service) Fetcher() fetch.DataFetcher {
 	return s.fetcher
 }
 
+// blobJSON is a struct-based representation for celestia-node compatible JSON.
+// Using a struct avoids the per-call map[string]any allocation that json.Marshal
+// requires for maps.
+type blobJSON struct {
+	Namespace    []byte `json:"namespace"`
+	Data         []byte `json:"data"`
+	ShareVersion uint32 `json:"share_version"`
+	Commitment   []byte `json:"commitment"`
+	Index        int    `json:"index"`
+}
+
 // MarshalBlob converts a stored blob into celestia-node compatible JSON.
 func MarshalBlob(b *types.Blob) json.RawMessage {
-	m := map[string]any{
-		"namespace":     b.Namespace[:],
-		"data":          b.Data,
-		"share_version": b.ShareVersion,
-		"commitment":    b.Commitment,
-		"index":         b.Index,
-	}
-	raw, _ := json.Marshal(m) //nolint:errcheck
+	raw, _ := json.Marshal(blobJSON{ //nolint:errcheck
+		Namespace:    b.Namespace[:],
+		Data:         b.Data,
+		ShareVersion: b.ShareVersion,
+		Commitment:   b.Commitment,
+		Index:        b.Index,
+	})
 	return raw
 }

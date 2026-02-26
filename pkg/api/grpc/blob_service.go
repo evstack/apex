@@ -73,7 +73,7 @@ func (s *BlobServiceServer) GetAll(ctx context.Context, req *pb.GetAllRequest) (
 		nsList[i] = ns
 	}
 
-	var allBlobs []types.Blob
+	allBlobs := make([]types.Blob, 0, len(nsList)*8)
 	for _, ns := range nsList {
 		blobs, err := s.svc.Store().GetBlobs(ctx, ns, req.Height, req.Height, 0, 0)
 		if err != nil {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/rs/zerolog"
@@ -75,7 +76,7 @@ func (s *Service) BlobGetByCommitment(ctx context.Context, commitment []byte) (j
 // GetBlobByCommitment returns a blob matching the given commitment.
 func (s *Service) GetBlobByCommitment(ctx context.Context, commitment []byte) (*types.Blob, error) {
 	if len(commitment) == 0 {
-		return nil, fmt.Errorf("commitment is required")
+		return nil, errors.New("commitment is required")
 	}
 	b, err := s.store.GetBlobByCommitment(ctx, commitment)
 	if err != nil {
@@ -137,7 +138,7 @@ func (s *Service) GetAllBlobs(ctx context.Context, height uint64, namespaces []t
 // BlobGetProof forwards a proof request to the upstream Celestia node.
 func (s *Service) BlobGetProof(ctx context.Context, height uint64, namespace, commitment []byte) (json.RawMessage, error) {
 	if s.proof == nil {
-		return nil, fmt.Errorf("proof forwarding not available")
+		return nil, errors.New("proof forwarding not available")
 	}
 	return s.proof.GetProof(ctx, height, namespace, commitment)
 }
@@ -145,7 +146,7 @@ func (s *Service) BlobGetProof(ctx context.Context, height uint64, namespace, co
 // BlobIncluded forwards an inclusion check to the upstream Celestia node.
 func (s *Service) BlobIncluded(ctx context.Context, height uint64, namespace []byte, proof json.RawMessage, commitment []byte) (bool, error) {
 	if s.proof == nil {
-		return false, fmt.Errorf("proof forwarding not available")
+		return false, errors.New("proof forwarding not available")
 	}
 	return s.proof.Included(ctx, height, namespace, proof, commitment)
 }

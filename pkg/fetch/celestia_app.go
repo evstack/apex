@@ -3,7 +3,9 @@ package fetch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -143,7 +145,7 @@ func (f *CelestiaAppFetcher) SubscribeHeaders(ctx context.Context) (<-chan *type
 	if f.closed {
 		f.mu.Unlock()
 		cancel()
-		return nil, fmt.Errorf("fetcher is closed")
+		return nil, errors.New("fetcher is closed")
 	}
 	if f.cancelSub != nil {
 		f.cancelSub()
@@ -208,10 +210,10 @@ func (f *CelestiaAppFetcher) Close() error {
 // mapBlockResponse converts a gRPC block response into a types.Header.
 func mapBlockResponse(blockID *cometpb.BlockID, block *cometpb.Block) (*types.Header, error) {
 	if block == nil || block.GetHeader() == nil {
-		return nil, fmt.Errorf("nil block or header in response")
+		return nil, errors.New("nil block or header in response")
 	}
 	if blockID == nil {
-		return nil, fmt.Errorf("nil block_id in response")
+		return nil, errors.New("nil block_id in response")
 	}
 
 	hdr := block.GetHeader()
@@ -224,7 +226,7 @@ func mapBlockResponse(blockID *cometpb.BlockID, block *cometpb.Block) (*types.He
 	envelope := map[string]any{
 		"header": hdr,
 		"commit": map[string]any{
-			"height":   fmt.Sprintf("%d", hdr.GetHeight()),
+			"height":   strconv.FormatInt(hdr.GetHeight(), 10),
 			"block_id": blockID,
 		},
 	}

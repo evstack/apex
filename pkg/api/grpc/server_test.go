@@ -235,7 +235,7 @@ func TestGRPCBlobGetAllRejectsTooManyNamespaces(t *testing.T) {
 	client := startTestServer(t, svc)
 
 	namespaces := make([][]byte, 0, 17)
-	for i := 0; i < 17; i++ {
+	for i := range 17 {
 		ns := testNamespace(byte(i + 1))
 		namespaces = append(namespaces, ns[:])
 	}

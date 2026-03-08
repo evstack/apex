@@ -276,7 +276,7 @@ func TestS3Store_SyncState(t *testing.T) {
 
 	// Initially not found.
 	_, err := s.GetSyncState(ctx)
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 

@@ -279,7 +279,7 @@ func TestJSONRPCBlobGetAll(t *testing.T) {
 func TestJSONRPCBlobGetAllAllowsCompatibilitySizedNamespaceList(t *testing.T) {
 	st := newMockStore()
 	namespaces := make([][]byte, 0, 17)
-	for i := 0; i < 17; i++ {
+	for i := range 17 {
 		ns := testNamespace(byte(i + 1))
 		namespaces = append(namespaces, ns[:])
 		st.blobs[10] = append(st.blobs[10], types.Blob{

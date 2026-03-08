@@ -78,9 +78,9 @@ func (sm *SubscriptionManager) handleHeader(ctx context.Context, hdr *types.Head
 	if !ok {
 		// Channel closed (disconnect or ctx cancelled).
 		if ctx.Err() != nil {
-			return networkHeight, nil
+			return networkHeight, nil //nolint:nilerr // context cancellation is a clean shutdown, not an error
 		}
-		return networkHeight, fmt.Errorf("header subscription closed unexpectedly")
+		return networkHeight, errors.New("header subscription closed unexpectedly")
 	}
 
 	if err := sm.checkContiguous(lastHeight, hdr.Height); err != nil {

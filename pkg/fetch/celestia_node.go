@@ -489,7 +489,7 @@ func retryDelay(attempt int) time.Duration {
 	if jitterCap <= 0 {
 		return base
 	}
-	return base + time.Duration(rand.Int64N(int64(jitterCap)))
+	return base + time.Duration(rand.Int64N(int64(jitterCap))) //nolint:gosec // G404: weak random is fine for jitter
 }
 
 func isNotFoundErr(err error) bool {

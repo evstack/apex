@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,7 +86,7 @@ func NewSource(cfg Config, log zerolog.Logger) (*Source, error) {
 
 func normalizePath(path string) (string, error) {
 	if path == "" {
-		return "", fmt.Errorf("celestia-app db path is required")
+		return "", errors.New("celestia-app db path is required")
 	}
 	path = filepath.Clean(path)
 
@@ -252,7 +253,7 @@ func decodeBlockMeta(raw []byte) (decodedMeta, error) {
 	for len(buf) > 0 {
 		num, typ, n := protowire.ConsumeTag(buf)
 		if n < 0 {
-			return decodedMeta{}, fmt.Errorf("invalid block meta tag")
+			return decodedMeta{}, errors.New("invalid block meta tag")
 		}
 		buf = buf[n:]
 
@@ -267,7 +268,7 @@ func decodeBlockMeta(raw []byte) (decodedMeta, error) {
 
 		blockIDBytes, n := protowire.ConsumeBytes(buf)
 		if n < 0 {
-			return decodedMeta{}, fmt.Errorf("invalid block_id bytes")
+			return decodedMeta{}, errors.New("invalid block_id bytes")
 		}
 		buf = buf[n:]
 
@@ -280,7 +281,7 @@ func decodeBlockMeta(raw []byte) (decodedMeta, error) {
 	}
 
 	if out.PartsTotal == 0 {
-		return decodedMeta{}, fmt.Errorf("missing part_set_header.total")
+		return decodedMeta{}, errors.New("missing part_set_header.total")
 	}
 	return out, nil
 }
@@ -292,7 +293,7 @@ func decodeBlockID(raw []byte) ([]byte, uint32, error) {
 	for len(buf) > 0 {
 		num, typ, n := protowire.ConsumeTag(buf)
 		if n < 0 {
-			return nil, 0, fmt.Errorf("invalid block_id tag")
+			return nil, 0, errors.New("invalid block_id tag")
 		}
 		buf = buf[n:]
 		if typ != protowire.BytesType {
@@ -305,7 +306,7 @@ func decodeBlockID(raw []byte) ([]byte, uint32, error) {
 		}
 		val, n := protowire.ConsumeBytes(buf)
 		if n < 0 {
-			return nil, 0, fmt.Errorf("invalid block_id bytes")
+			return nil, 0, errors.New("invalid block_id bytes")
 		}
 		buf = buf[n:]
 		switch num {
@@ -328,13 +329,13 @@ func decodePartSetHeaderTotal(raw []byte) (uint32, error) {
 	for len(buf) > 0 {
 		num, typ, n := protowire.ConsumeTag(buf)
 		if n < 0 {
-			return 0, fmt.Errorf("invalid part_set_header tag")
+			return 0, errors.New("invalid part_set_header tag")
 		}
 		buf = buf[n:]
 		if num == 1 && typ == protowire.VarintType {
 			v, n := protowire.ConsumeVarint(buf)
 			if n < 0 {
-				return 0, fmt.Errorf("invalid part_set_header.total")
+				return 0, errors.New("invalid part_set_header.total")
 			}
 			return uint32(v), nil
 		}
@@ -344,7 +345,7 @@ func decodePartSetHeaderTotal(raw []byte) (uint32, error) {
 		}
 		buf = buf[n:]
 	}
-	return 0, fmt.Errorf("missing part_set_header.total")
+	return 0, errors.New("missing part_set_header.total")
 }
 
 func decodePartBytes(raw []byte) ([]byte, error) {
@@ -352,13 +353,13 @@ func decodePartBytes(raw []byte) ([]byte, error) {
 	for len(buf) > 0 {
 		num, typ, n := protowire.ConsumeTag(buf)
 		if n < 0 {
-			return nil, fmt.Errorf("invalid part tag")
+			return nil, errors.New("invalid part tag")
 		}
 		buf = buf[n:]
 		if num == 2 && typ == protowire.BytesType {
 			v, n := protowire.ConsumeBytes(buf)
 			if n < 0 {
-				return nil, fmt.Errorf("invalid part.bytes")
+				return nil, errors.New("invalid part.bytes")
 			}
 			return append([]byte(nil), v...), nil
 		}
@@ -368,7 +369,7 @@ func decodePartBytes(raw []byte) ([]byte, error) {
 		}
 		buf = buf[n:]
 	}
-	return nil, fmt.Errorf("missing part.bytes")
+	return nil, errors.New("missing part.bytes")
 }
 
 type decodedBlock struct {
@@ -384,7 +385,7 @@ func decodeBlock(raw []byte) (decodedBlock, error) {
 	for len(buf) > 0 {
 		num, typ, n := protowire.ConsumeTag(buf)
 		if n < 0 {
-			return decodedBlock{}, fmt.Errorf("invalid block tag")
+			return decodedBlock{}, errors.New("invalid block tag")
 		}
 		buf = buf[n:]
 		if typ != protowire.BytesType {
@@ -424,21 +425,21 @@ func decodeHeader(raw []byte, out *decodedBlock) error {
 	for len(buf) > 0 {
 		num, typ, n := protowire.ConsumeTag(buf)
 		if n < 0 {
-			return fmt.Errorf("invalid header tag")
+			return errors.New("invalid header tag")
 		}
 		buf = buf[n:]
 		switch {
 		case num == 3 && typ == protowire.VarintType:
 			v, n := protowire.ConsumeVarint(buf)
 			if n < 0 {
-				return fmt.Errorf("invalid header.height")
+				return errors.New("invalid header.height")
 			}
 			out.Height = int64(v)
 			buf = buf[n:]
 		case num == 4 && typ == protowire.BytesType:
 			tsRaw, n := protowire.ConsumeBytes(buf)
 			if n < 0 {
-				return fmt.Errorf("invalid header.time")
+				return errors.New("invalid header.time")
 			}
 			t, err := decodeTimestamp(tsRaw)
 			if err != nil {
@@ -449,7 +450,7 @@ func decodeHeader(raw []byte, out *decodedBlock) error {
 		case num == 7 && typ == protowire.BytesType:
 			v, n := protowire.ConsumeBytes(buf)
 			if n < 0 {
-				return fmt.Errorf("invalid header.data_hash")
+				return errors.New("invalid header.data_hash")
 			}
 			out.DataHash = append([]byte(nil), v...)
 			buf = buf[n:]
@@ -473,7 +474,7 @@ func decodeTimestamp(raw []byte) (time.Time, error) {
 	for len(buf) > 0 {
 		num, typ, n := protowire.ConsumeTag(buf)
 		if n < 0 {
-			return time.Time{}, fmt.Errorf("invalid timestamp tag")
+			return time.Time{}, errors.New("invalid timestamp tag")
 		}
 		buf = buf[n:]
 		if typ != protowire.VarintType {
@@ -486,7 +487,7 @@ func decodeTimestamp(raw []byte) (time.Time, error) {
 		}
 		v, n := protowire.ConsumeVarint(buf)
 		if n < 0 {
-			return time.Time{}, fmt.Errorf("invalid timestamp varint")
+			return time.Time{}, errors.New("invalid timestamp varint")
 		}
 		buf = buf[n:]
 		switch num {
@@ -506,13 +507,13 @@ func decodeDataTxs(raw []byte) ([][]byte, error) {
 	for len(buf) > 0 {
 		num, typ, n := protowire.ConsumeTag(buf)
 		if n < 0 {
-			return nil, fmt.Errorf("invalid data tag")
+			return nil, errors.New("invalid data tag")
 		}
 		buf = buf[n:]
 		if num == 1 && typ == protowire.BytesType {
 			tx, n := protowire.ConsumeBytes(buf)
 			if n < 0 {
-				return nil, fmt.Errorf("invalid tx bytes")
+				return nil, errors.New("invalid tx bytes")
 			}
 			txs = append(txs, append([]byte(nil), tx...))
 			buf = buf[n:]
@@ -625,13 +626,13 @@ func (w *writableLevel) close() error              { return w.db.Close() }
 
 func openWritable(path, backend string) (writableKV, error) {
 	switch backend {
-	case "pebble":
+	case backendPebble:
 		db, err := pebble.Open(path, &pebble.Options{})
 		if err != nil {
 			return nil, err
 		}
 		return &writablePebble{db: db}, nil
-	case "leveldb":
+	case backendLevelDB:
 		db, err := leveldb.OpenFile(path, nil)
 		if err != nil {
 			return nil, err

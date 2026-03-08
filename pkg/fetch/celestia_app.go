@@ -101,7 +101,7 @@ func (f *CelestiaAppFetcher) GetHeightData(ctx context.Context, height uint64, n
 		return nil, nil, fmt.Errorf("get block at height %d: %w", height, err)
 	}
 
-	hdr, err := mapBlockResponse(resp.BlockId, resp.Block)
+	hdr, err := mapBlockResponse(resp.GetBlockId(), resp.GetBlock())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -109,11 +109,11 @@ func (f *CelestiaAppFetcher) GetHeightData(ctx context.Context, height uint64, n
 	if len(namespaces) == 0 {
 		return hdr, nil, nil
 	}
-	if resp.Block == nil || resp.Block.Data == nil {
+	if resp.GetBlock() == nil || resp.GetBlock().GetData() == nil {
 		return hdr, nil, nil
 	}
 
-	txs := resp.Block.Data.Txs
+	txs := resp.GetBlock().GetData().GetTxs()
 	blobs, err := extractBlobsFromBlock(txs, namespaces, height)
 	if err != nil {
 		return nil, nil, fmt.Errorf("extract blobs at height %d: %w", height, err)
@@ -130,7 +130,7 @@ func (f *CelestiaAppFetcher) GetNetworkHead(ctx context.Context) (*types.Header,
 	if err != nil {
 		return nil, fmt.Errorf("get latest block: %w", err)
 	}
-	return mapBlockResponse(resp.BlockId, resp.Block)
+	return mapBlockResponse(resp.GetBlockId(), resp.GetBlock())
 }
 
 // SubscribeHeaders polls GetLatestBlock at 1s intervals and emits new headers
@@ -207,15 +207,15 @@ func (f *CelestiaAppFetcher) Close() error {
 
 // mapBlockResponse converts a gRPC block response into a types.Header.
 func mapBlockResponse(blockID *cometpb.BlockID, block *cometpb.Block) (*types.Header, error) {
-	if block == nil || block.Header == nil {
+	if block == nil || block.GetHeader() == nil {
 		return nil, fmt.Errorf("nil block or header in response")
 	}
 	if blockID == nil {
 		return nil, fmt.Errorf("nil block_id in response")
 	}
 
-	hdr := block.Header
-	t := hdr.Time.AsTime()
+	hdr := block.GetHeader()
+	t := hdr.GetTime().AsTime()
 
 	// Wrap in envelope matching the canonical shape used by celestia_node and
 	// backfill: {"header": ..., "commit": ...}. The gRPC response does not
@@ -224,7 +224,7 @@ func mapBlockResponse(blockID *cometpb.BlockID, block *cometpb.Block) (*types.He
 	envelope := map[string]any{
 		"header": hdr,
 		"commit": map[string]any{
-			"height":   fmt.Sprintf("%d", hdr.Height),
+			"height":   fmt.Sprintf("%d", hdr.GetHeight()),
 			"block_id": blockID,
 		},
 	}
@@ -234,9 +234,9 @@ func mapBlockResponse(blockID *cometpb.BlockID, block *cometpb.Block) (*types.He
 	}
 
 	return &types.Header{
-		Height:    uint64(hdr.Height),
-		Hash:      blockID.Hash,
-		DataHash:  hdr.DataHash,
+		Height:    uint64(hdr.GetHeight()),
+		Hash:      blockID.GetHash(),
+		DataHash:  hdr.GetDataHash(),
 		Time:      t,
 		RawHeader: raw,
 	}, nil

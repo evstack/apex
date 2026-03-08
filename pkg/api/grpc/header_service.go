@@ -22,10 +22,10 @@ type HeaderServiceServer struct {
 }
 
 func (s *HeaderServiceServer) GetByHeight(ctx context.Context, req *pb.GetByHeightRequest) (*pb.GetByHeightResponse, error) {
-	hdr, err := s.svc.Store().GetHeader(ctx, req.Height)
+	hdr, err := s.svc.GetHeaderByHeight(ctx, req.GetHeight())
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "header at height %d not found", req.Height)
+			return nil, status.Errorf(codes.NotFound, "header at height %d not found", req.GetHeight())
 		}
 		return nil, status.Errorf(codes.Internal, "get header: %v", err)
 	}
@@ -33,25 +33,18 @@ func (s *HeaderServiceServer) GetByHeight(ctx context.Context, req *pb.GetByHeig
 }
 
 func (s *HeaderServiceServer) LocalHead(ctx context.Context, _ *pb.LocalHeadRequest) (*pb.LocalHeadResponse, error) {
-	ss, err := s.svc.Store().GetSyncState(ctx)
+	hdr, err := s.svc.GetLocalHead(ctx)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "no sync state available")
+			return nil, status.Errorf(codes.NotFound, "no local head available")
 		}
-		return nil, status.Errorf(codes.Internal, "get sync state: %v", err)
-	}
-	hdr, err := s.svc.Store().GetHeader(ctx, ss.LatestHeight)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "header at height %d not found", ss.LatestHeight)
-		}
-		return nil, status.Errorf(codes.Internal, "get header: %v", err)
+		return nil, status.Errorf(codes.Internal, "get local head: %v", err)
 	}
 	return &pb.LocalHeadResponse{Header: headerToProto(hdr)}, nil
 }
 
 func (s *HeaderServiceServer) NetworkHead(ctx context.Context, _ *pb.NetworkHeadRequest) (*pb.NetworkHeadResponse, error) {
-	hdr, err := s.svc.Fetcher().GetNetworkHead(ctx)
+	hdr, err := s.svc.GetNetworkHead(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "get network head: %v", err)
 	}

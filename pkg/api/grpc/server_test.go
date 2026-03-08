@@ -136,7 +136,7 @@ func startTestServer(t *testing.T, svc *api.Service) pb.BlobServiceClient {
 	t.Helper()
 
 	srv := NewServer(svc, zerolog.Nop())
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	lis, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
@@ -157,7 +157,7 @@ func startTestHeaderServer(t *testing.T, svc *api.Service) pb.HeaderServiceClien
 	t.Helper()
 
 	srv := NewServer(svc, zerolog.Nop())
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	lis, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
@@ -195,11 +195,11 @@ func TestGRPCBlobGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if resp.Blob.Height != 10 {
-		t.Errorf("Height = %d, want 10", resp.Blob.Height)
+	if resp.GetBlob().GetHeight() != 10 {
+		t.Errorf("Height = %d, want 10", resp.GetBlob().GetHeight())
 	}
-	if string(resp.Blob.Data) != "d1" {
-		t.Errorf("Data = %q, want %q", resp.Blob.Data, "d1")
+	if string(resp.GetBlob().GetData()) != "d1" {
+		t.Errorf("Data = %q, want %q", resp.GetBlob().GetData(), "d1")
 	}
 }
 
@@ -223,8 +223,29 @@ func TestGRPCBlobGetAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAll: %v", err)
 	}
-	if len(resp.Blobs) != 2 {
-		t.Errorf("got %d blobs, want 2", len(resp.Blobs))
+	if len(resp.GetBlobs()) != 2 {
+		t.Errorf("got %d blobs, want 2", len(resp.GetBlobs()))
+	}
+}
+
+func TestGRPCBlobGetAllRejectsTooManyNamespaces(t *testing.T) {
+	st := newMockStore()
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
+	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
+	client := startTestServer(t, svc)
+
+	namespaces := make([][]byte, 0, 17)
+	for i := 0; i < 17; i++ {
+		ns := testNamespace(byte(i + 1))
+		namespaces = append(namespaces, ns[:])
+	}
+
+	_, err := client.GetAll(context.Background(), &pb.GetAllRequest{
+		Height:     10,
+		Namespaces: namespaces,
+	})
+	if err == nil {
+		t.Fatal("expected GetAll to reject too many namespaces")
 	}
 }
 
@@ -247,11 +268,11 @@ func TestGRPCBlobGetByCommitment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByCommitment: %v", err)
 	}
-	if resp.Blob.Height != 10 {
-		t.Errorf("Height = %d, want 10", resp.Blob.Height)
+	if resp.GetBlob().GetHeight() != 10 {
+		t.Errorf("Height = %d, want 10", resp.GetBlob().GetHeight())
 	}
-	if string(resp.Blob.Data) != "d1" {
-		t.Errorf("Data = %q, want %q", resp.Blob.Data, "d1")
+	if string(resp.GetBlob().GetData()) != "d1" {
+		t.Errorf("Data = %q, want %q", resp.GetBlob().GetData(), "d1")
 	}
 }
 
@@ -274,11 +295,11 @@ func TestGRPCHeaderGetByHeight(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByHeight: %v", err)
 	}
-	if resp.Header.Height != 42 {
-		t.Errorf("Height = %d, want 42", resp.Header.Height)
+	if resp.GetHeader().GetHeight() != 42 {
+		t.Errorf("Height = %d, want 42", resp.GetHeader().GetHeight())
 	}
-	if string(resp.Header.Hash) != "hash" {
-		t.Errorf("Hash = %q, want %q", resp.Header.Hash, "hash")
+	if string(resp.GetHeader().GetHash()) != "hash" {
+		t.Errorf("Hash = %q, want %q", resp.GetHeader().GetHash(), "hash")
 	}
 }
 
@@ -299,8 +320,8 @@ func TestGRPCHeaderLocalHead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LocalHead: %v", err)
 	}
-	if resp.Header.Height != 100 {
-		t.Errorf("Height = %d, want 100", resp.Header.Height)
+	if resp.GetHeader().GetHeight() != 100 {
+		t.Errorf("Height = %d, want 100", resp.GetHeader().GetHeight())
 	}
 }
 
@@ -321,8 +342,8 @@ func TestGRPCHeaderNetworkHead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NetworkHead: %v", err)
 	}
-	if resp.Header.Height != 200 {
-		t.Errorf("Height = %d, want 200", resp.Header.Height)
+	if resp.GetHeader().GetHeight() != 200 {
+		t.Errorf("Height = %d, want 200", resp.GetHeader().GetHeight())
 	}
 }
 
@@ -368,10 +389,69 @@ func TestGRPCBlobSubscribe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Recv: %v", err)
 	}
-	if ev.Height != 1 {
-		t.Errorf("Height = %d, want 1", ev.Height)
+	if ev.GetHeight() != 1 {
+		t.Errorf("Height = %d, want 1", ev.GetHeight())
 	}
-	if len(ev.Blobs) != 1 {
-		t.Errorf("Blobs = %d, want 1", len(ev.Blobs))
+	if len(ev.GetBlobs()) != 1 {
+		t.Errorf("Blobs = %d, want 1", len(ev.GetBlobs()))
+	}
+}
+
+func TestGRPCBlobSubscribeSkipsEmptyFilteredEvents(t *testing.T) {
+	st := newMockStore()
+	ns := testNamespace(1)
+	other := testNamespace(2)
+
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
+	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
+	client := startTestServer(t, svc)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	stream, err := client.Subscribe(ctx, &pb.BlobServiceSubscribeRequest{
+		Namespace: ns[:],
+	})
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	deadline := time.After(5 * time.Second)
+	for notifier.SubscriberCount() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for subscriber registration")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	notifier.Publish(api.HeightEvent{
+		Height: 1,
+		Header: &types.Header{Height: 1},
+		Blobs: []types.Blob{
+			{Height: 1, Namespace: other, Data: []byte("ignore"), Index: 0},
+		},
+	})
+	notifier.Publish(api.HeightEvent{
+		Height: 2,
+		Header: &types.Header{Height: 2},
+		Blobs: []types.Blob{
+			{Height: 2, Namespace: ns, Data: []byte("deliver"), Index: 0},
+		},
+	})
+
+	ev, err := stream.Recv()
+	if err != nil {
+		t.Fatalf("Recv: %v", err)
+	}
+	if ev.GetHeight() != 2 {
+		t.Fatalf("Height = %d, want 2", ev.GetHeight())
+	}
+	if len(ev.GetBlobs()) != 1 {
+		t.Fatalf("Blobs = %d, want 1", len(ev.GetBlobs()))
+	}
+	if string(ev.GetBlobs()[0].GetData()) != "deliver" {
+		t.Fatalf("Data = %q, want %q", ev.GetBlobs()[0].GetData(), "deliver")
 	}
 }

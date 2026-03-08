@@ -149,7 +149,7 @@ func validateDataSource(ds *DataSourceConfig) error {
 	switch ds.Type {
 	case "node", "":
 		if ds.CelestiaNodeURL == "" {
-			return fmt.Errorf("data_source.celestia_node_url is required for type \"node\"")
+			return errors.New("data_source.celestia_node_url is required for type \"node\"")
 		}
 	case "app":
 		if ds.CelestiaAppGRPCAddr == "" {

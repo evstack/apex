@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/cockroachdb/pebble"
@@ -24,6 +25,10 @@ import (
 const (
 	layoutV1 = "v1"
 	layoutV2 = "v2"
+
+	backendAuto    = "auto"
+	backendPebble  = "pebble"
+	backendLevelDB = "leveldb"
 )
 
 // Config controls direct celestia-app DB reads.
@@ -47,10 +52,10 @@ var _ backfill.Source = (*Source)(nil)
 // NewSource opens blockstore.db and auto-detects backend/layout when configured.
 func NewSource(cfg Config, log zerolog.Logger) (*Source, error) {
 	if cfg.Backend == "" {
-		cfg.Backend = "auto"
+		cfg.Backend = backendAuto
 	}
 	if cfg.Layout == "" {
-		cfg.Layout = "auto"
+		cfg.Layout = backendAuto
 	}
 
 	dbPath, err := normalizePath(cfg.Path)
@@ -107,7 +112,7 @@ func normalizePath(path string) (string, error) {
 }
 
 func detectLayout(db kvDB, requested string) (layout string, version string, err error) {
-	if requested != "auto" && requested != layoutV1 && requested != layoutV2 {
+	if requested != backendAuto && requested != layoutV1 && requested != layoutV2 {
 		return "", "", fmt.Errorf("invalid layout %q: must be auto|v1|v2", requested)
 	}
 	if requested == layoutV1 || requested == layoutV2 {
@@ -162,7 +167,7 @@ func (s *Source) FetchHeight(_ context.Context, height uint64, namespaces []type
 	}
 
 	rawBlock := make([]byte, 0, meta.PartsTotal*65536) // 64KB per part estimate
-	for idx := uint32(0); idx < meta.PartsTotal; idx++ {
+	for idx := range meta.PartsTotal {
 		partKey := blockPartKey(s.layout, height, idx)
 		partRaw, err := s.db.Get(partKey)
 		if err != nil {
@@ -312,6 +317,7 @@ func decodeBlockID(raw []byte) ([]byte, uint32, error) {
 			if err != nil {
 				return nil, 0, err
 			}
+		default:
 		}
 	}
 	return hash, total, nil
@@ -407,6 +413,7 @@ func decodeBlock(raw []byte) (decodedBlock, error) {
 				return decodedBlock{}, err
 			}
 			out.Txs = txs
+		default:
 		}
 	}
 	return out, nil
@@ -487,6 +494,7 @@ func decodeTimestamp(raw []byte) (time.Time, error) {
 			seconds = int64(v)
 		case 2:
 			nanos = int64(v)
+		default:
 		}
 	}
 	return time.Unix(seconds, nanos).UTC(), nil
@@ -563,33 +571,33 @@ func probeKV(db kvDB) bool {
 
 func openKV(path, backend string) (kvDB, string, error) {
 	switch backend {
-	case "pebble":
+	case backendPebble:
 		db, err := pebble.Open(path, &pebble.Options{ReadOnly: true})
 		if err != nil {
 			return nil, "", fmt.Errorf("open pebble blockstore %q: %w", path, err)
 		}
-		return &pebbleDB{db: db}, "pebble", nil
-	case "leveldb":
+		return &pebbleDB{db: db}, backendPebble, nil
+	case backendLevelDB:
 		db, err := leveldb.OpenFile(path, &ldbopt.Options{ReadOnly: true})
 		if err != nil {
 			return nil, "", fmt.Errorf("open leveldb blockstore %q: %w", path, err)
 		}
-		return &levelDB{db: db}, "leveldb", nil
-	case "auto":
+		return &levelDB{db: db}, backendLevelDB, nil
+	case backendAuto:
 		// Pebble can sometimes open LevelDB files due to format compatibility.
 		// After opening, probe for a known marker key to confirm the backend
 		// is reading valid data before committing to it.
 		if db, err := pebble.Open(path, &pebble.Options{ReadOnly: true}); err == nil {
 			kv := &pebbleDB{db: db}
 			if probeKV(kv) {
-				return kv, "pebble", nil
+				return kv, backendPebble, nil
 			}
 			_ = kv.Close()
 		}
 		if db, err := leveldb.OpenFile(path, &ldbopt.Options{ReadOnly: true}); err == nil {
 			kv := &levelDB{db: db}
 			if probeKV(kv) {
-				return kv, "leveldb", nil
+				return kv, backendLevelDB, nil
 			}
 			_ = kv.Close()
 		}
@@ -721,14 +729,15 @@ func splitIntoParts(raw []byte, partSize int) [][]byte {
 // fields. The backfill source reads raw protobuf, so we build the JSON that
 // consumers (ev-node) expect rather than storing the full protobuf blob.
 func buildMinimalRawHeader(height uint64, t time.Time, dataHash, blockHash []byte) ([]byte, error) {
+	heightStr := strconv.FormatUint(height, 10)
 	obj := map[string]any{
 		"header": map[string]any{
-			"height":    fmt.Sprintf("%d", height),
+			"height":    heightStr,
 			"time":      t.Format(time.RFC3339Nano),
 			"data_hash": hex.EncodeToString(dataHash),
 		},
 		"commit": map[string]any{
-			"height": fmt.Sprintf("%d", height),
+			"height": heightStr,
 			"block_id": map[string]any{
 				"hash": hex.EncodeToString(blockHash),
 			},

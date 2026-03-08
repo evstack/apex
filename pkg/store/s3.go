@@ -393,18 +393,11 @@ func (s *S3Store) GetBlobByCommitment(ctx context.Context, commitment []byte) (*
 	commitHex := hex.EncodeToString(commitment)
 
 	s.mu.Lock()
-	for _, entry := range s.commitEntriesLocked() {
-		if entry.commitmentHex == commitHex {
-			ns, err := types.NamespaceFromHex(entry.pointer.Namespace)
-			if err == nil {
-				if b := s.findBlobInBufferLocked(ns, entry.pointer.Height, entry.pointer.Index); b != nil {
-					s.mu.Unlock()
-					return b, nil
-				}
-			}
-		}
-	}
+	b := s.findCommitEntryBlobLocked(commitHex)
 	s.mu.Unlock()
+	if b != nil {
+		return b, nil
+	}
 
 	// Look up commitment index in S3.
 	key := s.key("index", "commitments", commitHex+".json")
@@ -781,11 +774,23 @@ func (s *S3Store) ensureBufferedBlobInvariant(b *types.Blob, bufs ...map[blobChu
 	return nil
 }
 
-func (s *S3Store) commitEntriesLocked() []commitEntry {
-	entries := make([]commitEntry, 0, len(s.commitBuf)+len(s.inflight.commitBuf))
-	entries = append(entries, s.commitBuf...)
-	entries = append(entries, s.inflight.commitBuf...)
-	return entries
+// findCommitEntryBlobLocked searches both commitBuf and inflight.commitBuf
+// for a matching commitment and returns the corresponding buffered blob.
+// Caller must hold s.mu.
+func (s *S3Store) findCommitEntryBlobLocked(commitHex string) *types.Blob {
+	for _, entries := range [2][]commitEntry{s.commitBuf, s.inflight.commitBuf} {
+		for _, entry := range entries {
+			if entry.commitmentHex == commitHex {
+				ns, err := types.NamespaceFromHex(entry.pointer.Namespace)
+				if err == nil {
+					if b := s.findBlobInBufferLocked(ns, entry.pointer.Height, entry.pointer.Index); b != nil {
+						return b
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (s *S3Store) restoreInflight(blobBuf map[blobChunkKey][]types.Blob, headerBuf map[uint64][]*types.Header, commitBuf []commitEntry) {

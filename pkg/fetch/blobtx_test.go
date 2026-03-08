@@ -80,8 +80,8 @@ func buildTx(body []byte) []byte {
 // buildInnerSDKTx constructs a valid inner SDK tx containing MsgPayForBlobs.
 func buildInnerSDKTx(signer string, commitments [][]byte) []byte {
 	pfb := buildMsgPayForBlobs(signer, commitments)
-	any := buildAny(msgPayForBlobsTypeURL, pfb)
-	body := buildTxBody(any)
+	anyPB := buildAny(msgPayForBlobsTypeURL, pfb)
+	body := buildTxBody(anyPB)
 	return buildTx(body)
 }
 

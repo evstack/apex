@@ -3,12 +3,12 @@ package jsonrpc
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 )
 
 var (
-	errNotSupported = fmt.Errorf("method not supported by apex indexer")
-	errReadOnly     = fmt.Errorf("apex is a read-only indexer, blob submission not supported")
+	errNotSupported = errors.New("method not supported by apex indexer")
+	errReadOnly     = errors.New("apex is a read-only indexer, blob submission not supported")
 )
 
 // ShareStub holds stub methods for the share namespace.

@@ -1,6 +1,7 @@
 package fetch
 
 import (
+	"errors"
 	"fmt"
 
 	"google.golang.org/protobuf/encoding/protowire"
@@ -45,7 +46,7 @@ type parsedBlobTx struct {
 //	inner_tx (length-prefixed) || blob1 (length-prefixed) || blob2 ... || 0x62
 func parseBlobTx(raw []byte) (*parsedBlobTx, error) {
 	if len(raw) == 0 {
-		return nil, fmt.Errorf("empty BlobTx")
+		return nil, errors.New("empty BlobTx")
 	}
 	if raw[len(raw)-1] != blobTxTypeID {
 		return nil, fmt.Errorf("not a BlobTx: trailing byte 0x%02x, want 0x%02x", raw[len(raw)-1], blobTxTypeID)
@@ -57,7 +58,7 @@ func parseBlobTx(raw []byte) (*parsedBlobTx, error) {
 	// Read inner SDK tx (length-prefixed).
 	innerTx, n := protowire.ConsumeBytes(data)
 	if n < 0 {
-		return nil, fmt.Errorf("decode inner tx: invalid length prefix")
+		return nil, errors.New("decode inner tx: invalid length prefix")
 	}
 	data = data[n:]
 
@@ -101,7 +102,7 @@ func parsePFBFromTx(txBytes []byte) (pfbData, error) {
 		return pfbData{}, fmt.Errorf("extract tx body: %w", err)
 	}
 	if bodyBytes == nil {
-		return pfbData{}, fmt.Errorf("tx has no body")
+		return pfbData{}, errors.New("tx has no body")
 	}
 
 	// Iterate messages (field 1, repeated) in TxBody to find MsgPayForBlobs.
@@ -117,7 +118,7 @@ func parsePFBFromTx(txBytes []byte) (pfbData, error) {
 		return parseMsgPayForBlobs(value)
 	}
 
-	return pfbData{}, fmt.Errorf("no MsgPayForBlobs found in tx")
+	return pfbData{}, errors.New("no MsgPayForBlobs found in tx")
 }
 
 // parseMsgPayForBlobs extracts signer and share_commitments from MsgPayForBlobs.
@@ -130,7 +131,7 @@ func parseMsgPayForBlobs(data []byte) (pfbData, error) {
 	for len(buf) > 0 {
 		num, typ, n := protowire.ConsumeTag(buf)
 		if n < 0 {
-			return pfbData{}, fmt.Errorf("invalid tag in MsgPayForBlobs")
+			return pfbData{}, errors.New("invalid tag in MsgPayForBlobs")
 		}
 		buf = buf[n:]
 
@@ -146,6 +147,7 @@ func parseMsgPayForBlobs(data []byte) (pfbData, error) {
 				result.Signer = append([]byte(nil), val...)
 			case 4: // share_commitments (repeated bytes)
 				result.ShareCommitments = append(result.ShareCommitments, append([]byte(nil), val...))
+			default:
 			}
 		case protowire.VarintType:
 			_, n := protowire.ConsumeVarint(buf)
@@ -173,7 +175,7 @@ func parseAny(data []byte) (typeURL string, value []byte, err error) {
 	for len(buf) > 0 {
 		num, typ, n := protowire.ConsumeTag(buf)
 		if n < 0 {
-			return "", nil, fmt.Errorf("invalid tag")
+			return "", nil, errors.New("invalid tag")
 		}
 		buf = buf[n:]
 
@@ -198,6 +200,7 @@ func parseAny(data []byte) (typeURL string, value []byte, err error) {
 			typeURL = string(val)
 		case 2:
 			value = val
+		default:
 		}
 	}
 	return typeURL, value, nil
@@ -212,7 +215,7 @@ func parseRawBlob(data []byte) (rawBlob, error) {
 	for len(data) > 0 {
 		num, typ, n := protowire.ConsumeTag(data)
 		if n < 0 {
-			return rawBlob{}, fmt.Errorf("invalid proto tag")
+			return rawBlob{}, errors.New("invalid proto tag")
 		}
 		data = data[n:]
 
@@ -230,6 +233,7 @@ func parseRawBlob(data []byte) (rawBlob, error) {
 				b.Data = append([]byte(nil), val...)
 			case 5: // signer (celestia-app v2+)
 				b.Signer = append([]byte(nil), val...)
+			default:
 			}
 		case protowire.VarintType:
 			val, n := protowire.ConsumeVarint(data)
@@ -242,6 +246,7 @@ func parseRawBlob(data []byte) (rawBlob, error) {
 				b.ShareVersion = uint32(val)
 			case 4: // namespace_version
 				b.NamespaceVersion = uint32(val)
+			default:
 			}
 		default:
 			// Skip unknown wire types for forward compatibility.
@@ -330,7 +335,7 @@ func extractBytesField(data []byte, target protowire.Number) ([]byte, error) {
 	for len(data) > 0 {
 		num, typ, n := protowire.ConsumeTag(data)
 		if n < 0 {
-			return nil, fmt.Errorf("invalid tag")
+			return nil, errors.New("invalid tag")
 		}
 		data = data[n:]
 

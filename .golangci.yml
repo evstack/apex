@@ -5,16 +5,78 @@ run:
 
 linters:
   enable:
+    # complexity
     - gocyclo
-    - misspell
+
+    # correctness
     - bodyclose
+    - errorlint
+    - exhaustive
+    - nilerr
+    - noctx
+
+    # security
+    - gosec
+
+    # performance
+    - intrange
+    - perfsprint
     - prealloc
+    - unconvert
+
+    # code hygiene
+    - goconst
+    - misspell
+    - protogetter
+    - revive
+    - unparam
+
   settings:
     gocyclo:
       min-complexity: 15
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    exhaustive:
+      default-signifies-exhaustive: true
+    gosec:
+      excludes:
+        - G104 # unhandled errors — covered by errcheck (default linter)
+        - G115 # integer overflow conversion — too noisy for blockchain height math
+        - G117 # struct field name matches secret pattern — false positive
+        - G304 # file inclusion via variable — expected for config loading
+        - G306 # file permissions > 0600 — config templates, not secrets
+        - G704 # SSRF via taint — HTTP clients use configured URLs, not user input
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+          disabled: true
+        - name: increment-decrement
+        - name: var-naming
+        - name: range
+        - name: receiver-naming
+        - name: indent-error-flow
+        - name: empty-block
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: redefines-builtin-id
+
   exclusions:
+    rules:
+      # Standard Go package names are fine for internal packages.
+      - linters:
+          - revive
+        text: "avoid.*package names"
     paths:
       - vendor
+      - ".*\\.pb\\.go$"
+      - ".*\\.pb\\.gw\\.go$"
 
 formatters:
   enable:

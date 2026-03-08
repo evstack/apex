@@ -10,6 +10,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const configValueAuto = "auto"
+
 // Generate writes a default config file with comments to the given path.
 // Returns an error if the file already exists.
 func Generate(path string) error {
@@ -149,34 +151,34 @@ func validateDataSource(ds *DataSourceConfig) error {
 	switch ds.Type {
 	case "node", "":
 		if ds.CelestiaNodeURL == "" {
-			return fmt.Errorf("data_source.celestia_node_url is required for type \"node\"")
+			return errors.New("data_source.celestia_node_url is required for type \"node\"")
 		}
 	case "app":
 		if ds.CelestiaAppGRPCAddr == "" {
-			return fmt.Errorf("data_source.celestia_app_grpc_addr is required for type \"app\"")
+			return errors.New("data_source.celestia_app_grpc_addr is required for type \"app\"")
 		}
 		if ds.BackfillSource == "" {
 			ds.BackfillSource = "rpc"
 		}
 		if ds.CelestiaAppDBBackend == "" {
-			ds.CelestiaAppDBBackend = "auto"
+			ds.CelestiaAppDBBackend = configValueAuto
 		}
 		if ds.CelestiaAppDBLayout == "" {
-			ds.CelestiaAppDBLayout = "auto"
+			ds.CelestiaAppDBLayout = configValueAuto
 		}
 		switch ds.BackfillSource {
 		case "rpc":
 		case "db":
 			if ds.CelestiaAppDBPath == "" {
-				return fmt.Errorf("data_source.celestia_app_db_path is required when data_source.backfill_source is \"db\"")
+				return errors.New("data_source.celestia_app_db_path is required when data_source.backfill_source is \"db\"")
 			}
 			switch ds.CelestiaAppDBBackend {
-			case "auto", "pebble", "leveldb":
+			case configValueAuto, "pebble", "leveldb":
 			default:
 				return fmt.Errorf("data_source.celestia_app_db_backend %q is invalid; must be auto|pebble|leveldb", ds.CelestiaAppDBBackend)
 			}
 			switch ds.CelestiaAppDBLayout {
-			case "auto", "v1", "v2":
+			case configValueAuto, "v1", "v2":
 			default:
 				return fmt.Errorf("data_source.celestia_app_db_layout %q is invalid; must be auto|v1|v2", ds.CelestiaAppDBLayout)
 			}
@@ -198,23 +200,23 @@ func validateStorage(s *StorageConfig) error {
 	switch s.Type {
 	case "s3":
 		if s.S3 == nil {
-			return fmt.Errorf("storage.s3 is required when storage.type is \"s3\"")
+			return errors.New("storage.s3 is required when storage.type is \"s3\"")
 		}
 		if s.S3.Bucket == "" {
-			return fmt.Errorf("storage.s3.bucket is required")
+			return errors.New("storage.s3.bucket is required")
 		}
 		if s.S3.Region == "" && s.S3.Endpoint == "" {
-			return fmt.Errorf("storage.s3.region is required (unless endpoint is set)")
+			return errors.New("storage.s3.region is required (unless endpoint is set)")
 		}
 		if s.S3.ChunkSize == 0 {
 			s.S3.ChunkSize = 64
 		}
 		if s.S3.ChunkSize < 0 {
-			return fmt.Errorf("storage.s3.chunk_size must be positive")
+			return errors.New("storage.s3.chunk_size must be positive")
 		}
 	case "sqlite", "":
 		if s.DBPath == "" {
-			return fmt.Errorf("storage.db_path is required")
+			return errors.New("storage.db_path is required")
 		}
 	default:
 		return fmt.Errorf("storage.type %q is invalid; must be \"sqlite\" or \"s3\"", s.Type)
@@ -256,50 +258,50 @@ func validate(cfg *Config) error {
 
 func validateRPC(rpc *RPCConfig) error {
 	if rpc.ListenAddr == "" {
-		return fmt.Errorf("rpc.listen_addr is required")
+		return errors.New("rpc.listen_addr is required")
 	}
 	if rpc.GRPCListenAddr == "" {
-		return fmt.Errorf("rpc.grpc_listen_addr is required")
+		return errors.New("rpc.grpc_listen_addr is required")
 	}
 	if rpc.ReadTimeout < 0 {
-		return fmt.Errorf("rpc.read_timeout must be non-negative")
+		return errors.New("rpc.read_timeout must be non-negative")
 	}
 	if rpc.WriteTimeout < 0 {
-		return fmt.Errorf("rpc.write_timeout must be non-negative")
+		return errors.New("rpc.write_timeout must be non-negative")
 	}
 	return nil
 }
 
 func validateSync(sync *SyncConfig) error {
 	if sync.BatchSize <= 0 {
-		return fmt.Errorf("sync.batch_size must be positive")
+		return errors.New("sync.batch_size must be positive")
 	}
 	if sync.Concurrency <= 0 {
-		return fmt.Errorf("sync.concurrency must be positive")
+		return errors.New("sync.concurrency must be positive")
 	}
 	return nil
 }
 
 func validateSubscription(sub *SubscriptionConfig) error {
 	if sub.BufferSize <= 0 {
-		return fmt.Errorf("subscription.buffer_size must be positive")
+		return errors.New("subscription.buffer_size must be positive")
 	}
 	if sub.MaxSubscribers <= 0 {
-		return fmt.Errorf("subscription.max_subscribers must be positive")
+		return errors.New("subscription.max_subscribers must be positive")
 	}
 	return nil
 }
 
 func validateMetrics(m *MetricsConfig) error {
 	if m.Enabled && m.ListenAddr == "" {
-		return fmt.Errorf("metrics.listen_addr is required when metrics are enabled")
+		return errors.New("metrics.listen_addr is required when metrics are enabled")
 	}
 	return nil
 }
 
 func validateProfiling(p *ProfilingConfig) error {
 	if p.Enabled && p.ListenAddr == "" {
-		return fmt.Errorf("profiling.listen_addr is required when profiling is enabled")
+		return errors.New("profiling.listen_addr is required when profiling is enabled")
 	}
 	return nil
 }

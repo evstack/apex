@@ -164,6 +164,9 @@ Celestia-node compatible methods:
 
 ### gRPC (port 9090)
 
+gRPC is Apex-owned and may evolve independently from the JSON-RPC compatibility layer.
+See [API Compatibility Policy](api-compat.md) for the boundary.
+
 - `apex.v1.BlobService`: Get, GetAll, GetByCommitment, Subscribe (server-streaming)
 - `apex.v1.HeaderService`: GetByHeight, LocalHead, NetworkHead, Subscribe (server-streaming)
 

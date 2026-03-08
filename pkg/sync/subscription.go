@@ -63,31 +63,51 @@ func (sm *SubscriptionManager) Run(ctx context.Context) error {
 				Msg("streaming progress")
 			processed = 0
 		case hdr, ok := <-ch:
-			if !ok {
-				// Channel closed (disconnect or ctx cancelled).
-				if ctx.Err() != nil {
-					return nil
-				}
-				return fmt.Errorf("header subscription closed unexpectedly")
+			nextNetworkHeight, err := sm.handleHeader(ctx, hdr, ok, lastHeight, networkHeight, namespaces)
+			if err != nil {
+				return err
 			}
-
-			// Check contiguity.
-			if lastHeight > 0 && hdr.Height != lastHeight+1 {
-				sm.log.Warn().
-					Uint64("expected", lastHeight+1).
-					Uint64("got", hdr.Height).
-					Msg("gap detected")
-				return ErrGapDetected
-			}
-
-			if err := sm.processHeader(ctx, hdr, namespaces, networkHeight); err != nil {
-				return fmt.Errorf("process height %d: %w", hdr.Height, err)
-			}
-
+			networkHeight = nextNetworkHeight
 			lastHeight = hdr.Height
 			processed++
 		}
 	}
+}
+
+func (sm *SubscriptionManager) handleHeader(ctx context.Context, hdr *types.Header, ok bool, lastHeight, networkHeight uint64, namespaces []types.Namespace) (uint64, error) {
+	if !ok {
+		// Channel closed (disconnect or ctx cancelled).
+		if ctx.Err() != nil {
+			return networkHeight, nil //nolint:nilerr // context cancellation is a clean shutdown, not an error
+		}
+		return networkHeight, errors.New("header subscription closed unexpectedly")
+	}
+
+	if err := sm.checkContiguous(lastHeight, hdr.Height); err != nil {
+		return networkHeight, err
+	}
+
+	if hdr.Height > networkHeight {
+		networkHeight = hdr.Height
+	}
+
+	if err := sm.processHeader(ctx, hdr, namespaces, networkHeight); err != nil {
+		return networkHeight, fmt.Errorf("process height %d: %w", hdr.Height, err)
+	}
+
+	return networkHeight, nil
+}
+
+func (sm *SubscriptionManager) checkContiguous(lastHeight, nextHeight uint64) error {
+	if lastHeight == 0 || nextHeight == lastHeight+1 {
+		return nil
+	}
+
+	sm.log.Warn().
+		Uint64("expected", lastHeight+1).
+		Uint64("got", nextHeight).
+		Msg("gap detected")
+	return ErrGapDetected
 }
 
 func (sm *SubscriptionManager) processHeader(ctx context.Context, hdr *types.Header, namespaces []types.Namespace, networkHeight uint64) error {

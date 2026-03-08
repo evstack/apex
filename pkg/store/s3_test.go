@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"testing"
@@ -16,12 +17,18 @@ import (
 
 // mockS3Client is an in-memory S3 client for testing.
 type mockS3Client struct {
-	mu      sync.RWMutex
-	objects map[string][]byte
+	mu            sync.RWMutex
+	objects       map[string][]byte
+	putErrByKey   map[string]error
+	putCallsByKey map[string]int
 }
 
 func newMockS3Client() *mockS3Client {
-	return &mockS3Client{objects: make(map[string][]byte)}
+	return &mockS3Client{
+		objects:       make(map[string][]byte),
+		putErrByKey:   make(map[string]error),
+		putCallsByKey: make(map[string]int),
+	}
 }
 
 func (m *mockS3Client) GetObject(_ context.Context, input *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
@@ -41,11 +48,18 @@ func (m *mockS3Client) PutObject(_ context.Context, input *s3.PutObjectInput, _ 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	key := *input.Key
+	m.putCallsByKey[key]++
+	if err, ok := m.putErrByKey[key]; ok {
+		delete(m.putErrByKey, key)
+		return nil, err
+	}
+
 	data, err := io.ReadAll(input.Body)
 	if err != nil {
 		return nil, err
 	}
-	m.objects[*input.Key] = data
+	m.objects[key] = data
 	return &s3.PutObjectOutput{}, nil
 }
 
@@ -53,6 +67,12 @@ func (m *mockS3Client) objectCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.objects)
+}
+
+func (m *mockS3Client) failNextPut(key string, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.putErrByKey[key] = err
 }
 
 func newTestS3Store(t *testing.T) (*S3Store, *mockS3Client) {
@@ -102,7 +122,7 @@ func TestS3Store_PutBlobsAndGetBlob(t *testing.T) {
 
 	// Not found.
 	_, err = s.GetBlob(ctx, ns, 99, 0)
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
@@ -196,7 +216,7 @@ func TestS3Store_GetBlobByCommitment(t *testing.T) {
 
 	// Not found.
 	_, err = s.GetBlobByCommitment(ctx, []byte("nonexistent"))
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
@@ -245,7 +265,7 @@ func TestS3Store_PutHeaderAndGetHeader(t *testing.T) {
 
 	// Not found.
 	_, err = s.GetHeader(ctx, 999)
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
@@ -256,7 +276,7 @@ func TestS3Store_SyncState(t *testing.T) {
 
 	// Initially not found.
 	_, err := s.GetSyncState(ctx)
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 
@@ -410,6 +430,45 @@ func TestS3Store_IdempotentPut(t *testing.T) {
 	}
 }
 
+func TestS3Store_RejectsConflictingBufferedBlob(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newTestS3Store(t)
+	ns := testNamespace(1)
+
+	original := types.Blob{Height: 3, Namespace: ns, Data: []byte("d1"), Commitment: []byte("c1"), Index: 0}
+	conflict := types.Blob{Height: 3, Namespace: ns, Data: []byte("d2"), Commitment: []byte("c2"), Index: 0}
+
+	if err := s.PutBlobs(ctx, []types.Blob{original}); err != nil {
+		t.Fatalf("PutBlobs (original): %v", err)
+	}
+	if err := s.PutBlobs(ctx, []types.Blob{conflict}); err == nil {
+		t.Fatal("expected conflicting buffered blob insert to fail")
+	}
+}
+
+func TestS3Store_RejectsConflictingPersistedBlob(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newTestS3Store(t)
+	ns := testNamespace(1)
+
+	original := types.Blob{Height: 3, Namespace: ns, Data: []byte("d1"), Commitment: []byte("c1"), Index: 0}
+	conflict := types.Blob{Height: 3, Namespace: ns, Data: []byte("d2"), Commitment: []byte("c2"), Index: 0}
+
+	if err := s.PutBlobs(ctx, []types.Blob{original}); err != nil {
+		t.Fatalf("PutBlobs (original): %v", err)
+	}
+	if err := s.SetSyncState(ctx, types.SyncStatus{LatestHeight: 3}); err != nil {
+		t.Fatalf("SetSyncState (original): %v", err)
+	}
+
+	if err := s.PutBlobs(ctx, []types.Blob{conflict}); err != nil {
+		t.Fatalf("PutBlobs (conflict): %v", err)
+	}
+	if err := s.SetSyncState(ctx, types.SyncStatus{LatestHeight: 3}); err == nil {
+		t.Fatal("expected persisted blob conflict to fail during flush")
+	}
+}
+
 func TestS3Store_ChunkBoundary(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newTestS3Store(t) // chunkSize=4
@@ -510,5 +569,49 @@ func TestS3Store_BufferReadThrough(t *testing.T) {
 	}
 	if !bytes.Equal(gotB.Data, []byte("buf")) {
 		t.Errorf("blob data %q, want %q", gotB.Data, "buf")
+	}
+}
+
+func TestS3Store_FlushFailureRetainsBufferedData(t *testing.T) {
+	ctx := context.Background()
+	s, mock := newTestS3Store(t)
+	ns := testNamespace(1)
+
+	blob := types.Blob{
+		Height:     1,
+		Namespace:  ns,
+		Data:       []byte("retry-me"),
+		Commitment: []byte("c1"),
+		Index:      0,
+	}
+	if err := s.PutBlobs(ctx, []types.Blob{blob}); err != nil {
+		t.Fatalf("PutBlobs: %v", err)
+	}
+
+	blobKey := s.key("blobs", ns.String(), chunkFileName(s.chunkStart(blob.Height)))
+	mock.failNextPut(blobKey, errors.New("injected put failure"))
+
+	if err := s.SetSyncState(ctx, types.SyncStatus{LatestHeight: blob.Height}); err == nil {
+		t.Fatal("expected SetSyncState to fail")
+	}
+
+	got, err := s.GetBlob(ctx, ns, blob.Height, blob.Index)
+	if err != nil {
+		t.Fatalf("GetBlob after failed flush: %v", err)
+	}
+	if !bytes.Equal(got.Data, blob.Data) {
+		t.Errorf("got data %q, want %q", got.Data, blob.Data)
+	}
+
+	if err := s.SetSyncState(ctx, types.SyncStatus{LatestHeight: blob.Height}); err != nil {
+		t.Fatalf("SetSyncState retry: %v", err)
+	}
+
+	got, err = s.GetBlob(ctx, ns, blob.Height, blob.Index)
+	if err != nil {
+		t.Fatalf("GetBlob after retry: %v", err)
+	}
+	if !bytes.Equal(got.Data, blob.Data) {
+		t.Errorf("got data %q, want %q", got.Data, blob.Data)
 	}
 }

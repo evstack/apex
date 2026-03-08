@@ -205,6 +205,50 @@ func TestPutBlobsIdempotent(t *testing.T) {
 	}
 }
 
+func TestPutBlobsRejectsConflictingIndex(t *testing.T) {
+	s := openTestDB(t)
+	ctx := context.Background()
+	ns := testNamespace(1)
+
+	original := types.Blob{
+		Height: 10, Namespace: ns, Commitment: []byte("c1"),
+		Data: []byte("d1"), ShareVersion: 0, Index: 0,
+	}
+	conflict := types.Blob{
+		Height: 10, Namespace: ns, Commitment: []byte("c2"),
+		Data: []byte("d2"), ShareVersion: 0, Index: 0,
+	}
+
+	if err := s.PutBlobs(ctx, []types.Blob{original}); err != nil {
+		t.Fatalf("PutBlobs (original): %v", err)
+	}
+	if err := s.PutBlobs(ctx, []types.Blob{conflict}); err == nil {
+		t.Fatal("expected conflicting blob insert to fail")
+	}
+}
+
+func TestPutBlobsRejectsConflictingCommitment(t *testing.T) {
+	s := openTestDB(t)
+	ctx := context.Background()
+	ns := testNamespace(1)
+
+	original := types.Blob{
+		Height: 10, Namespace: ns, Commitment: []byte("c1"),
+		Data: []byte("d1"), ShareVersion: 0, Index: 0,
+	}
+	conflict := types.Blob{
+		Height: 10, Namespace: ns, Commitment: []byte("c1"),
+		Data: []byte("d1"), ShareVersion: 0, Index: 1,
+	}
+
+	if err := s.PutBlobs(ctx, []types.Blob{original}); err != nil {
+		t.Fatalf("PutBlobs (original): %v", err)
+	}
+	if err := s.PutBlobs(ctx, []types.Blob{conflict}); err == nil {
+		t.Fatal("expected conflicting commitment insert to fail")
+	}
+}
+
 func TestPutHeaderIdempotent(t *testing.T) {
 	s := openTestDB(t)
 	ctx := context.Background()

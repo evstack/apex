@@ -47,6 +47,7 @@ just check          # tidy + lint + test + build
 ## Documentation
 
 - [Running Apex](docs/running.md) -- setup, configuration, Docker, CLI
+- [API Compatibility Policy](docs/api-compat.md) -- JSON-RPC compatibility boundary vs gRPC evolution
 
 ## License
 

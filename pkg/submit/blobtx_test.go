@@ -34,23 +34,59 @@ func TestMarshalBlobTx(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalBlobTx: %v", err)
 	}
-	if raw[len(raw)-1] != blobTxTypeID {
-		t.Fatalf("trailing type byte = 0x%02x", raw[len(raw)-1])
-	}
-
-	inner, n := protowire.ConsumeBytes(raw[:len(raw)-1])
-	if n < 0 {
-		t.Fatal("failed to decode inner tx")
-	}
+	inner, blobs, typeID := decodeBlobTxEnvelope(t, raw)
 	if string(inner) != "inner" {
 		t.Fatalf("inner tx = %q", inner)
 	}
-
-	blobBytes, bn := protowire.ConsumeBytes(raw[n : len(raw)-1])
-	if bn < 0 {
-		t.Fatal("failed to decode blob payload")
+	if len(blobs) != 1 {
+		t.Fatalf("blob count = %d, want 1", len(blobs))
 	}
-	if len(blobBytes) == 0 {
+	if len(blobs[0]) == 0 {
 		t.Fatal("blob payload is empty")
 	}
+	if typeID != protoBlobTxTypeID {
+		t.Fatalf("type_id = %q, want %q", typeID, protoBlobTxTypeID)
+	}
+}
+
+func decodeBlobTxEnvelope(t *testing.T, raw []byte) ([]byte, [][]byte, string) {
+	t.Helper()
+
+	var (
+		innerTx []byte
+		blobs   [][]byte
+		typeID  string
+	)
+
+	data := raw
+	for len(data) > 0 {
+		num, typ, n := protowire.ConsumeTag(data)
+		if n < 0 {
+			t.Fatal("failed to decode BlobTx tag")
+		}
+		data = data[n:]
+
+		if typ != protowire.BytesType {
+			t.Fatalf("unexpected wire type %d for field %d", typ, num)
+		}
+
+		value, n := protowire.ConsumeBytes(data)
+		if n < 0 {
+			t.Fatalf("failed to decode BlobTx field %d", num)
+		}
+		data = data[n:]
+
+		switch num {
+		case 1:
+			innerTx = value
+		case 2:
+			blobs = append(blobs, value)
+		case 3:
+			typeID = string(value)
+		default:
+			t.Fatalf("unexpected BlobTx field %d", num)
+		}
+	}
+
+	return innerTx, blobs, typeID
 }

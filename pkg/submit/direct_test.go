@@ -101,8 +101,9 @@ func TestDirectSubmitterSubmit(t *testing.T) {
 	if client.broadcastCalls != 1 {
 		t.Fatalf("broadcast calls = %d, want 1", client.broadcastCalls)
 	}
-	if got := client.broadcastRequests[0][len(client.broadcastRequests[0])-1]; got != blobTxTypeID {
-		t.Fatalf("blob tx type = 0x%02x", got)
+	_, _, typeID := decodeBlobTxEnvelope(t, client.broadcastRequests[0])
+	if typeID != protoBlobTxTypeID {
+		t.Fatalf("blob tx type_id = %q, want %q", typeID, protoBlobTxTypeID)
 	}
 }
 

@@ -4,11 +4,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/evstack/apex/pkg/types"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
 const (
-	blobTxTypeID                     = 0x62
+	protoBlobTxTypeID                = "BLOB"
 	shareSizeBytes                   = 512
 	firstSparseShareContentSize      = 478
 	continuationSparseShareDataBytes = 482
@@ -27,15 +28,19 @@ func MarshalBlobTx(innerTx []byte, blobs []Blob) ([]byte, error) {
 		return nil, errors.New("at least one blob is required")
 	}
 
-	out := protowire.AppendBytes(nil, innerTx)
+	out := protowire.AppendTag(nil, 1, protowire.BytesType)
+	out = protowire.AppendBytes(out, innerTx)
 	for i := range blobs {
 		blobBytes, err := marshalBlobProto(blobs[i])
 		if err != nil {
 			return nil, fmt.Errorf("marshal blob %d: %w", i, err)
 		}
+		out = protowire.AppendTag(out, 2, protowire.BytesType)
 		out = protowire.AppendBytes(out, blobBytes)
 	}
-	return append(out, blobTxTypeID), nil
+	out = protowire.AppendTag(out, 3, protowire.BytesType)
+	out = protowire.AppendBytes(out, []byte(protoBlobTxTypeID))
+	return out, nil
 }
 
 // EstimateGas returns the deterministic gas limit used for direct celestia-app
@@ -66,13 +71,20 @@ func marshalBlobProto(blob Blob) ([]byte, error) {
 	if len(blob.Data) == 0 {
 		return nil, errors.New("blob data is required")
 	}
+	namespaceVersion := blob.Namespace[0]
+	namespaceID := blob.Namespace[1:]
+	if len(namespaceID) != types.NamespaceSize-1 {
+		return nil, fmt.Errorf("invalid namespace size: got %d, want %d", len(blob.Namespace), types.NamespaceSize)
+	}
 
 	out := protowire.AppendTag(nil, 1, protowire.BytesType)
-	out = protowire.AppendBytes(out, blob.Namespace[:])
+	out = protowire.AppendBytes(out, namespaceID)
 	out = protowire.AppendTag(out, 2, protowire.BytesType)
 	out = protowire.AppendBytes(out, blob.Data)
 	out = protowire.AppendTag(out, 3, protowire.VarintType)
 	out = protowire.AppendVarint(out, uint64(blob.ShareVersion))
+	out = protowire.AppendTag(out, 4, protowire.VarintType)
+	out = protowire.AppendVarint(out, uint64(namespaceVersion))
 	if len(blob.Signer) > 0 {
 		out = protowire.AppendTag(out, 5, protowire.BytesType)
 		out = protowire.AppendBytes(out, blob.Signer)

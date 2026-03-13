@@ -12,8 +12,18 @@ import (
 func buildBlobProto(b rawBlob) []byte {
 	var out []byte
 	if len(b.Namespace) > 0 {
+		namespaceField := b.Namespace
+		namespaceVersion := b.NamespaceVersion
+		if len(b.Namespace) == types.NamespaceSize {
+			namespaceVersion = uint32(b.Namespace[0])
+			namespaceField = b.Namespace[1:]
+		}
 		out = protowire.AppendTag(out, 1, protowire.BytesType)
-		out = protowire.AppendBytes(out, b.Namespace)
+		out = protowire.AppendBytes(out, namespaceField)
+		if namespaceVersion > 0 {
+			out = protowire.AppendTag(out, 4, protowire.VarintType)
+			out = protowire.AppendVarint(out, uint64(namespaceVersion))
+		}
 	}
 	if len(b.Data) > 0 {
 		out = protowire.AppendTag(out, 2, protowire.BytesType)
@@ -22,10 +32,6 @@ func buildBlobProto(b rawBlob) []byte {
 	if b.ShareVersion > 0 {
 		out = protowire.AppendTag(out, 3, protowire.VarintType)
 		out = protowire.AppendVarint(out, uint64(b.ShareVersion))
-	}
-	if b.NamespaceVersion > 0 {
-		out = protowire.AppendTag(out, 4, protowire.VarintType)
-		out = protowire.AppendVarint(out, uint64(b.NamespaceVersion))
 	}
 	if len(b.Signer) > 0 {
 		out = protowire.AppendTag(out, 5, protowire.BytesType)
@@ -85,20 +91,32 @@ func buildInnerSDKTx(signer string, commitments [][]byte) []byte {
 	return buildTx(body)
 }
 
-// buildBlobTx constructs a valid BlobTx wire-format message with proper
+// buildBlobTx constructs the current protobuf BlobTx envelope with proper
 // MsgPayForBlobs containing commitments and signer.
 func buildBlobTx(signer string, commitments [][]byte, blobs ...rawBlob) []byte {
 	innerTx := buildInnerSDKTx(signer, commitments)
 	var out []byte
-	// Length-prefixed inner tx.
+	out = protowire.AppendTag(out, 1, protowire.BytesType)
 	out = protowire.AppendBytes(out, innerTx)
-	// Length-prefixed blob protos.
+	for _, b := range blobs {
+		blobProto := buildBlobProto(b)
+		out = protowire.AppendTag(out, 2, protowire.BytesType)
+		out = protowire.AppendBytes(out, blobProto)
+	}
+	out = protowire.AppendTag(out, 3, protowire.BytesType)
+	out = protowire.AppendBytes(out, []byte(protoBlobTxTypeID))
+	return out
+}
+
+func buildLegacyBlobTx(signer string, commitments [][]byte, blobs ...rawBlob) []byte {
+	innerTx := buildInnerSDKTx(signer, commitments)
+	var out []byte
+	out = protowire.AppendBytes(out, innerTx)
 	for _, b := range blobs {
 		blobProto := buildBlobProto(b)
 		out = protowire.AppendBytes(out, blobProto)
 	}
-	// Trailing BlobTx type byte.
-	out = append(out, blobTxTypeID)
+	out = append(out, legacyBlobTxTypeID)
 	return out
 }
 
@@ -162,6 +180,26 @@ func TestParseBlobTxMultiBlob(t *testing.T) {
 	}
 	if string(parsed.PFB.ShareCommitments[1]) != "c2" {
 		t.Errorf("commitment[1] = %q", parsed.PFB.ShareCommitments[1])
+	}
+}
+
+func TestParseBlobTxLegacyFormat(t *testing.T) {
+	tx := buildLegacyBlobTx("legacy-signer", [][]byte{[]byte("legacy-commit")},
+		rawBlob{Namespace: testNS(9), Data: []byte("legacy")},
+	)
+
+	parsed, err := parseBlobTx(tx)
+	if err != nil {
+		t.Fatalf("parseBlobTx legacy: %v", err)
+	}
+	if len(parsed.Blobs) != 1 {
+		t.Fatalf("got %d blobs, want 1", len(parsed.Blobs))
+	}
+	if string(parsed.Blobs[0].Data) != "legacy" {
+		t.Fatalf("blob data = %q, want %q", parsed.Blobs[0].Data, "legacy")
+	}
+	if string(parsed.PFB.Signer) != "legacy-signer" {
+		t.Fatalf("signer = %q, want %q", parsed.PFB.Signer, "legacy-signer")
 	}
 }
 

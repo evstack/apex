@@ -210,8 +210,12 @@ func (s *S3Store) PutBlobs(ctx context.Context, blobs []types.Blob) error {
 
 	for i := range blobs {
 		b := &blobs[i]
-		if err := s.ensureBufferedBlobInvariant(b, s.blobBuf, s.inflight.blobBuf); err != nil {
+		exists, err := s.ensureBufferedBlobInvariant(b, s.blobBuf, s.inflight.blobBuf)
+		if err != nil {
 			return err
+		}
+		if exists {
+			continue
 		}
 		key := blobChunkKey{namespace: b.Namespace, chunkStart: s.chunkStart(b.Height)}
 		s.blobBuf[key] = append(s.blobBuf[key], *b)
@@ -753,7 +757,7 @@ func collectBlobsInRange(result []types.Blob, buf map[blobChunkKey][]types.Blob,
 	return result
 }
 
-func (s *S3Store) ensureBufferedBlobInvariant(b *types.Blob, bufs ...map[blobChunkKey][]types.Blob) error {
+func (s *S3Store) ensureBufferedBlobInvariant(b *types.Blob, bufs ...map[blobChunkKey][]types.Blob) (bool, error) {
 	for _, buf := range bufs {
 		key := blobChunkKey{namespace: b.Namespace, chunkStart: s.chunkStart(b.Height)}
 		if blobs, ok := buf[key]; ok {
@@ -761,17 +765,17 @@ func (s *S3Store) ensureBufferedBlobInvariant(b *types.Blob, bufs ...map[blobChu
 				existing := &blobs[i]
 				if existing.Height == b.Height && existing.Namespace == b.Namespace && existing.Index == b.Index {
 					if !sameBlob(existing, b) {
-						return fmt.Errorf("blob conflict at height %d namespace %s index %d", b.Height, b.Namespace, b.Index)
+						return false, fmt.Errorf("blob conflict at height %d namespace %s index %d", b.Height, b.Namespace, b.Index)
 					}
-					return nil
+					return true, nil
 				}
 				if bytes.Equal(existing.Commitment, b.Commitment) && !sameBlob(existing, b) {
-					return fmt.Errorf("blob commitment conflict for %x", b.Commitment)
+					return false, fmt.Errorf("blob commitment conflict for %x", b.Commitment)
 				}
 			}
 		}
 	}
-	return nil
+	return false, nil
 }
 
 // findCommitEntryBlobLocked searches both commitBuf and inflight.commitBuf

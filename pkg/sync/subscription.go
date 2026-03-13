@@ -67,6 +67,9 @@ func (sm *SubscriptionManager) Run(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			if !ok {
+				return nil // channel closed; handleHeader already logged/validated
+			}
 			networkHeight = nextNetworkHeight
 			lastHeight = hdr.Height
 			processed++

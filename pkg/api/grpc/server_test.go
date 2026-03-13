@@ -10,7 +10,9 @@ import (
 
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	"github.com/evstack/apex/pkg/api"
 	pb "github.com/evstack/apex/pkg/api/grpc/gen/apex/v1"
@@ -246,6 +248,9 @@ func TestGRPCBlobGetAllRejectsTooManyNamespaces(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected GetAll to reject too many namespaces")
+	}
+	if code := status.Code(err); code != codes.InvalidArgument {
+		t.Fatalf("GetAll error code = %v, want InvalidArgument", code)
 	}
 }
 

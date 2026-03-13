@@ -159,7 +159,12 @@ func runMethodBench(addr, method string, params []any, concurrency int, duration
 				}
 
 				t0 := time.Now()
-				req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+				req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+				if reqErr != nil {
+					errCount.Add(1)
+					total.Add(1)
+					continue
+				}
 				req.Header.Set("Content-Type", "application/json")
 
 				resp, err := client.Do(req) //nolint:gosec // URL from CLI flag
@@ -342,7 +347,10 @@ func openSubscriberBatch(wsURL string, start, end int) ([]sub, int64, int64) {
 }
 
 func dialAndSubscribe(wsURL string, id int) (*websocket.Conn, error) {
-	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+	}
+	conn, resp, err := dialer.Dial(wsURL, nil)
 	if resp != nil && resp.Body != nil {
 		defer func() { _ = resp.Body.Close() }()
 	}
@@ -366,11 +374,14 @@ func dialAndSubscribe(wsURL string, id int) (*websocket.Conn, error) {
 // --- Helpers ---
 
 func fetchCurrentHeight(addr string) (uint64, error) {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+addr+"/health", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/health", nil)
 	if err != nil {
 		return 0, err
 	}
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // URL from CLI flag
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req) //nolint:gosec // URL from CLI flag
 	if err != nil {
 		return 0, err
 	}

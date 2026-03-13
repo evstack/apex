@@ -209,8 +209,16 @@ func validateDataSource(ds *DataSourceConfig) error {
 	default:
 		return fmt.Errorf("data_source.type %q is invalid; must be \"node\" or \"app\"", ds.Type)
 	}
-	for _, ns := range ds.Namespaces {
-		if _, err := types.NamespaceFromHex(ns); err != nil {
+	return validateNamespaces(ds.Namespaces)
+}
+
+func validateNamespaces(namespaces []string) error {
+	for _, ns := range namespaces {
+		parsed, err := types.NamespaceFromHex(ns)
+		if err != nil {
+			return fmt.Errorf("invalid namespace %q: %w", ns, err)
+		}
+		if err := parsed.ValidateForBlob(); err != nil {
 			return fmt.Errorf("invalid namespace %q: %w", ns, err)
 		}
 	}

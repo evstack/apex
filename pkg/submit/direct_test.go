@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/evstack/apex/pkg/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -103,8 +104,8 @@ func TestDirectSubmitterSubmit(t *testing.T) {
 		t.Fatalf("broadcast calls = %d, want 1", client.broadcastCalls)
 	}
 	_, _, typeID := decodeBlobTxEnvelope(t, client.broadcastRequests[0])
-	if typeID != protoBlobTxTypeID {
-		t.Fatalf("blob tx type_id = %q, want %q", typeID, protoBlobTxTypeID)
+	if typeID != types.ProtoBlobTxTypeID {
+		t.Fatalf("blob tx type_id = %q, want %q", typeID, types.ProtoBlobTxTypeID)
 	}
 }
 

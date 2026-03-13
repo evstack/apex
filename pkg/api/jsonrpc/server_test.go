@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	gsquare "github.com/celestiaorg/go-square/v3/share"
 	"github.com/rs/zerolog"
 
 	"github.com/evstack/apex/pkg/api"
@@ -141,8 +142,9 @@ func (m *mockSubmitter) Submit(_ context.Context, req *submit.Request) (*submit.
 }
 
 func testNamespace(b byte) types.Namespace {
+	namespace := gsquare.MustNewV0Namespace([]byte("apexns" + string([]byte{b})))
 	var ns types.Namespace
-	ns[types.NamespaceSize-1] = b
+	copy(ns[:], namespace.Bytes())
 	return ns
 }
 
@@ -410,12 +412,13 @@ func TestJSONRPCBlobSubmitDelegates(t *testing.T) {
 	srv := NewServer(svc, zerolog.Nop())
 
 	ns := testNamespace(9)
+	blobSigner := []byte("01234567890123456789")
 	resp := doRPC(t, srv, "blob.Submit", []map[string]any{{
 		"namespace":     ns[:],
 		"data":          []byte("hello"),
 		"share_version": 1,
 		"commitment":    []byte("c1"),
-		"signer":        []byte("signer"),
+		"signer":        blobSigner,
 		"index":         -1,
 	}}, map[string]any{
 		"gas_price":        0.1,
@@ -440,6 +443,9 @@ func TestJSONRPCBlobSubmitDelegates(t *testing.T) {
 	}
 	if string(submitter.last.Blobs[0].Data) != "hello" {
 		t.Fatalf("data = %q, want %q", submitter.last.Blobs[0].Data, "hello")
+	}
+	if string(submitter.last.Blobs[0].Signer) != string(blobSigner) {
+		t.Fatalf("signer = %x, want %x", submitter.last.Blobs[0].Signer, blobSigner)
 	}
 	if submitter.last.Options == nil || submitter.last.Options.TxPriority != submit.PriorityHigh {
 		t.Fatalf("options = %#v, want high priority", submitter.last.Options)

@@ -18,7 +18,7 @@ func TestBuildMsgPayForBlobs(t *testing.T) {
 	ns2 := testNamespace(2)
 	msg, err := BuildMsgPayForBlobs("celestia1test", []Blob{
 		{Namespace: ns1, Data: []byte("abc"), Commitment: []byte("c1"), ShareVersion: 0},
-		{Namespace: ns2, Data: []byte("hello"), Commitment: []byte("c2"), ShareVersion: 1},
+		{Namespace: ns2, Data: []byte("hello"), Commitment: []byte("c2"), ShareVersion: 1, Signer: testBlobSigner()},
 	})
 	if err != nil {
 		t.Fatalf("BuildMsgPayForBlobs: %v", err)

@@ -4,14 +4,16 @@ import (
 	"testing"
 	"time"
 
+	gsquare "github.com/celestiaorg/go-square/v3/share"
 	"github.com/rs/zerolog"
 
 	"github.com/evstack/apex/pkg/types"
 )
 
 func testNamespace(b byte) types.Namespace {
+	namespace := gsquare.MustNewV0Namespace([]byte("apexns" + string([]byte{b})))
 	var ns types.Namespace
-	ns[types.NamespaceSize-1] = b
+	copy(ns[:], namespace.Bytes())
 	return ns
 }
 

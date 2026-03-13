@@ -344,6 +344,7 @@ func TestServiceBlobSubmitRequiresSubmitter(t *testing.T) {
 
 func TestServiceBlobSubmitDelegates(t *testing.T) {
 	ns := testNamespace(5)
+	blobSigner := []byte("01234567890123456789")
 	submitter := &mockSubmitter{result: &submit.Result{Height: 42}}
 	svc := NewService(
 		newMockStore(),
@@ -359,7 +360,7 @@ func TestServiceBlobSubmitDelegates(t *testing.T) {
 		"data":          []byte("hello"),
 		"share_version": 1,
 		"commitment":    []byte("c1"),
-		"signer":        []byte("signer"),
+		"signer":        blobSigner,
 		"index":         -1,
 	}})
 	if err != nil {
@@ -389,22 +390,37 @@ func TestServiceBlobSubmitDelegates(t *testing.T) {
 	if len(submitter.last.Blobs) != 1 {
 		t.Fatalf("got %d blobs, want 1", len(submitter.last.Blobs))
 	}
-	if submitter.last.Blobs[0].Namespace != ns {
-		t.Fatalf("namespace = %x, want %x", submitter.last.Blobs[0].Namespace, ns)
+	assertSubmittedBlob(t, submitter.last.Blobs[0], ns, blobSigner)
+	assertSubmittedOptions(t, submitter.last.Options)
+}
+
+func assertSubmittedBlob(t *testing.T, blob submit.Blob, wantNamespace types.Namespace, wantSigner []byte) {
+	t.Helper()
+
+	if blob.Namespace != wantNamespace {
+		t.Fatalf("namespace = %x, want %x", blob.Namespace, wantNamespace)
 	}
-	if string(submitter.last.Blobs[0].Data) != "hello" {
-		t.Fatalf("data = %q, want %q", submitter.last.Blobs[0].Data, "hello")
+	if string(blob.Data) != "hello" {
+		t.Fatalf("data = %q, want %q", blob.Data, "hello")
 	}
-	if string(submitter.last.Blobs[0].Commitment) != "c1" {
-		t.Fatalf("commitment = %q, want %q", submitter.last.Blobs[0].Commitment, "c1")
+	if string(blob.Commitment) != "c1" {
+		t.Fatalf("commitment = %q, want %q", blob.Commitment, "c1")
 	}
-	if submitter.last.Options == nil || submitter.last.Options.TxPriority != submit.PriorityHigh {
-		t.Fatalf("options = %#v, want high priority", submitter.last.Options)
+	if string(blob.Signer) != string(wantSigner) {
+		t.Fatalf("signer = %x, want %x", blob.Signer, wantSigner)
 	}
-	if submitter.last.Options.GasPrice != 0.1 || !submitter.last.Options.IsGasPriceSet {
-		t.Fatalf("gas options = %#v, want gas price override", submitter.last.Options)
+}
+
+func assertSubmittedOptions(t *testing.T, opts *submit.TxConfig) {
+	t.Helper()
+
+	if opts == nil || opts.TxPriority != submit.PriorityHigh {
+		t.Fatalf("options = %#v, want high priority", opts)
 	}
-	if submitter.last.Options.SignerAddress != "celestia1test" {
-		t.Fatalf("signer address = %q, want %q", submitter.last.Options.SignerAddress, "celestia1test")
+	if opts.GasPrice != 0.1 || !opts.IsGasPriceSet {
+		t.Fatalf("gas options = %#v, want gas price override", opts)
+	}
+	if opts.SignerAddress != "celestia1test" {
+		t.Fatalf("signer address = %q, want %q", opts.SignerAddress, "celestia1test")
 	}
 }

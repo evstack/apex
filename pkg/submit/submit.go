@@ -27,7 +27,7 @@ const (
 type Blob struct {
 	Namespace    types.Namespace
 	Data         []byte
-	ShareVersion uint8
+	ShareVersion uint32
 	Commitment   []byte
 	Signer       []byte
 	Index        int
@@ -66,7 +66,7 @@ type Submitter interface {
 type jsonBlob struct {
 	Namespace    []byte `json:"namespace"`
 	Data         []byte `json:"data"`
-	ShareVersion uint8  `json:"share_version"`
+	ShareVersion uint32 `json:"share_version"`
 	Commitment   []byte `json:"commitment"`
 	Signer       []byte `json:"signer,omitempty"`
 	Index        int    `json:"index"`
@@ -109,7 +109,7 @@ func decodeBlobs(raw json.RawMessage) ([]Blob, error) {
 
 	blobs := make([]Blob, len(blobsJSON))
 	for i := range blobsJSON {
-		ns, err := namespaceFromBytes(blobsJSON[i].Namespace)
+		ns, err := types.NamespaceFromBytes(blobsJSON[i].Namespace)
 		if err != nil {
 			return nil, fmt.Errorf("decode submit blob %d namespace: %w", i, err)
 		}
@@ -120,6 +120,9 @@ func decodeBlobs(raw json.RawMessage) ([]Blob, error) {
 			Commitment:   blobsJSON[i].Commitment,
 			Signer:       blobsJSON[i].Signer,
 			Index:        blobsJSON[i].Index,
+		}
+		if _, err := convertSquareBlob(blobs[i]); err != nil {
+			return nil, fmt.Errorf("decode submit blob %d: %w", i, err)
 		}
 	}
 
@@ -136,8 +139,4 @@ func decodeOptions(raw json.RawMessage) (*TxConfig, error) {
 		return nil, fmt.Errorf("decode submit options: %w", err)
 	}
 	return &cfg, nil
-}
-
-func namespaceFromBytes(b []byte) (types.Namespace, error) {
-	return types.NamespaceFromBytes(b)
 }

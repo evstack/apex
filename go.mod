@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.9
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.0
 	github.com/btcsuite/btcd/btcutil v1.1.6
+	github.com/celestiaorg/go-square/v3 v3.0.2
 	github.com/cockroachdb/pebble v1.1.5
 	github.com/cosmos/btcutil v1.0.5
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0

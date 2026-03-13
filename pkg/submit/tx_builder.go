@@ -39,10 +39,14 @@ func BuildMsgPayForBlobs(signer string, blobs []Blob) (*blobv1.MsgPayForBlobs, e
 		if len(blobs[i].Commitment) == 0 {
 			return nil, fmt.Errorf("blob %d commitment is required", i)
 		}
-		namespaces[i] = blobs[i].Namespace[:]
-		blobSizes[i] = uint32(len(blobs[i].Data))
+		squareBlob, err := convertSquareBlob(blobs[i])
+		if err != nil {
+			return nil, fmt.Errorf("blob %d: %w", i, err)
+		}
+		namespaces[i] = squareBlob.Namespace().Bytes()
+		blobSizes[i] = uint32(squareBlob.DataLen())
 		commitments[i] = blobs[i].Commitment
-		shareVersions[i] = uint32(blobs[i].ShareVersion)
+		shareVersions[i] = uint32(squareBlob.ShareVersion())
 	}
 
 	return &blobv1.MsgPayForBlobs{

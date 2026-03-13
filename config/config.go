@@ -164,6 +164,9 @@ func (c *Config) ParsedNamespaces() ([]types.Namespace, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid namespace %q: %w", hex, err)
 		}
+		if err := ns.ValidateForBlob(); err != nil {
+			return nil, fmt.Errorf("invalid namespace %q: %w", hex, err)
+		}
 		namespaces = append(namespaces, ns)
 	}
 	return namespaces, nil

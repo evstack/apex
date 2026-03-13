@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	gsquare "github.com/celestiaorg/go-square/v3/share"
 	"github.com/evstack/apex/pkg/types"
 )
 
@@ -46,6 +47,74 @@ func TestDecodeRequestRejectsInvalidNamespace(t *testing.T) {
 	}
 }
 
+func TestDecodeRequestRejectsReservedNamespace(t *testing.T) {
+	t.Parallel()
+
+	ns := reservedNamespace()
+	blobsRaw, err := json.Marshal([]map[string]any{{
+		"namespace":     ns[:],
+		"data":          []byte("hello"),
+		"share_version": 0,
+		"commitment":    []byte("c1"),
+		"index":         0,
+	}})
+	if err != nil {
+		t.Fatalf("marshal blobs: %v", err)
+	}
+
+	_, err = DecodeRequest(blobsRaw, nil)
+	if err == nil {
+		t.Fatal("expected error for reserved namespace")
+	}
+}
+
+func TestDecodeRequestRejectsShareVersionOneWithoutSigner(t *testing.T) {
+	t.Parallel()
+
+	ns := testNamespace(7)
+	blobsRaw, err := json.Marshal([]map[string]any{{
+		"namespace":     ns[:],
+		"data":          []byte("hello"),
+		"share_version": 1,
+		"commitment":    []byte("c1"),
+		"index":         0,
+	}})
+	if err != nil {
+		t.Fatalf("marshal blobs: %v", err)
+	}
+
+	_, err = DecodeRequest(blobsRaw, nil)
+	if err == nil {
+		t.Fatal("expected error for share version one without signer")
+	}
+}
+
+func TestDecodeRequestAcceptsShareVersionOneSigner(t *testing.T) {
+	t.Parallel()
+
+	ns := testNamespace(8)
+	wantSigner := testBlobSigner()
+	blobsRaw, err := json.Marshal([]map[string]any{{
+		"namespace":     ns[:],
+		"data":          []byte("hello"),
+		"share_version": 1,
+		"commitment":    []byte("c1"),
+		"signer":        wantSigner,
+		"index":         0,
+	}})
+	if err != nil {
+		t.Fatalf("marshal blobs: %v", err)
+	}
+
+	req, err := DecodeRequest(blobsRaw, nil)
+	if err != nil {
+		t.Fatalf("DecodeRequest: %v", err)
+	}
+	if string(req.Blobs[0].Signer) != string(wantSigner) {
+		t.Fatalf("signer = %x, want %x", req.Blobs[0].Signer, wantSigner)
+	}
+}
+
 func TestMarshalResultRejectsNil(t *testing.T) {
 	t.Parallel()
 
@@ -55,7 +124,18 @@ func TestMarshalResultRejectsNil(t *testing.T) {
 }
 
 func testNamespace(b byte) types.Namespace {
+	namespace := gsquare.MustNewV0Namespace([]byte("apexns" + string([]byte{b})))
 	var ns types.Namespace
-	ns[types.NamespaceSize-1] = b
+	copy(ns[:], namespace.Bytes())
 	return ns
+}
+
+func reservedNamespace() types.Namespace {
+	var ns types.Namespace
+	ns[types.NamespaceSize-1] = 1
+	return ns
+}
+
+func testBlobSigner() []byte {
+	return []byte("01234567890123456789")
 }

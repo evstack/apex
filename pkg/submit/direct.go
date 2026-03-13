@@ -119,6 +119,11 @@ func validateSubmitRequest(req *Request) error {
 	if len(req.Blobs) == 0 {
 		return errors.New("at least one blob is required")
 	}
+	for i := range req.Blobs {
+		if _, err := convertSquareBlob(req.Blobs[i]); err != nil {
+			return fmt.Errorf("validate submission blob %d: %w", i, err)
+		}
+	}
 	return nil
 }
 

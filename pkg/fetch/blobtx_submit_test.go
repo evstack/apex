@@ -3,6 +3,7 @@ package fetch
 import (
 	"testing"
 
+	gsquare "github.com/celestiaorg/go-square/v3/share"
 	"github.com/evstack/apex/pkg/submit"
 	"github.com/evstack/apex/pkg/types"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -17,7 +18,7 @@ func TestParseBlobTxFromSubmitMarshaller(t *testing.T) {
 		Data:         []byte("payload"),
 		ShareVersion: 1,
 		Commitment:   []byte("commitment"),
-		Signer:       []byte("blob-signer"),
+		Signer:       []byte("01234567890123456789"),
 	}
 	pfb, err := submit.BuildMsgPayForBlobs("celestia1submitter", []submit.Blob{blob})
 	if err != nil {
@@ -65,7 +66,8 @@ func TestParseBlobTxFromSubmitMarshaller(t *testing.T) {
 }
 
 func testNamespaceType(b byte) types.Namespace {
+	namespace := gsquare.MustNewV0Namespace([]byte("apexns" + string([]byte{b})))
 	var ns types.Namespace
-	ns[types.NamespaceSize-1] = b
+	copy(ns[:], namespace.Bytes())
 	return ns
 }

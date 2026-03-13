@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/evstack/apex/pkg/types"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
@@ -30,7 +31,7 @@ func TestMarshalBlobTx(t *testing.T) {
 		Namespace:    testNamespace(2),
 		Data:         []byte("payload"),
 		ShareVersion: 1,
-		Signer:       []byte("signer"),
+		Signer:       testBlobSigner(),
 	}
 	raw, err := MarshalBlobTx([]byte("inner"), []Blob{blob})
 	if err != nil {
@@ -59,8 +60,8 @@ func TestMarshalBlobTx(t *testing.T) {
 	if !bytes.Equal(decoded.signer, blob.Signer) {
 		t.Fatalf("signer = %q, want %q", decoded.signer, blob.Signer)
 	}
-	if typeID != protoBlobTxTypeID {
-		t.Fatalf("type_id = %q, want %q", typeID, protoBlobTxTypeID)
+	if typeID != types.ProtoBlobTxTypeID {
+		t.Fatalf("type_id = %q, want %q", typeID, types.ProtoBlobTxTypeID)
 	}
 }
 

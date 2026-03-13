@@ -162,7 +162,7 @@ func runMethodBench(addr, method string, params []any, concurrency int, duration
 				req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 				req.Header.Set("Content-Type", "application/json")
 
-				resp, err := client.Do(req)
+				resp, err := client.Do(req) //nolint:gosec // URL from CLI flag
 				lat := time.Since(t0)
 
 				if err != nil {
@@ -370,7 +370,7 @@ func fetchCurrentHeight(addr string) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // URL from CLI flag
 	if err != nil {
 		return 0, err
 	}

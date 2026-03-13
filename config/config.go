@@ -29,7 +29,7 @@ type DataSourceConfig struct {
 	CelestiaAppDBPath    string   `yaml:"celestia_app_db_path"`    // required when backfill_source=db
 	CelestiaAppDBBackend string   `yaml:"celestia_app_db_backend"` // auto|pebble|leveldb
 	CelestiaAppDBLayout  string   `yaml:"celestia_app_db_layout"`  // auto|v1|v2
-	AuthToken            string   `yaml:"-"`                       // populated only via APEX_AUTH_TOKEN env var
+	AuthToken            string   `yaml:"-"`                       //nolint:gosec // populated only via APEX_AUTH_TOKEN env var; not a hardcoded credential
 	Namespaces           []string `yaml:"namespaces"`
 }
 

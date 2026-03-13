@@ -43,10 +43,8 @@ linters:
       excludes:
         - G104 # unhandled errors — covered by errcheck (default linter)
         - G115 # integer overflow conversion — too noisy for blockchain height math
-        - G117 # struct field name matches secret pattern — false positive
         - G304 # file inclusion via variable — expected for config loading
         - G306 # file permissions > 0600 — config templates, not secrets
-        - G704 # SSRF via taint — HTTP clients use configured URLs, not user input
     revive:
       rules:
         - name: blank-imports

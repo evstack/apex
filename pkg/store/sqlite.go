@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"embed"
@@ -12,7 +13,7 @@ import (
 	"github.com/evstack/apex/pkg/metrics"
 	"github.com/evstack/apex/pkg/types"
 
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // registers sqlite driver
 )
 
 //go:embed migrations/*.sql
@@ -44,7 +45,9 @@ func Open(path string) (*SQLiteStore, error) {
 	}
 	writer.SetMaxOpenConns(1)
 
-	if err := configureSQLite(writer); err != nil {
+	ctx := context.Background()
+
+	if err := configureSQLite(ctx, writer); err != nil {
 		_ = writer.Close()
 		return nil, fmt.Errorf("configure writer: %w", err)
 	}
@@ -56,7 +59,7 @@ func Open(path string) (*SQLiteStore, error) {
 	}
 	reader.SetMaxOpenConns(poolSize)
 
-	if err := configureSQLite(reader); err != nil {
+	if err := configureSQLite(ctx, reader); err != nil {
 		_ = writer.Close()
 		_ = reader.Close()
 		return nil, fmt.Errorf("configure reader: %w", err)
@@ -76,14 +79,14 @@ func (s *SQLiteStore) SetMetrics(m metrics.Recorder) {
 	s.metrics = m
 }
 
-func configureSQLite(db *sql.DB) error {
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+func configureSQLite(ctx context.Context, db *sql.DB) error {
+	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
 		return fmt.Errorf("set WAL mode: %w", err)
 	}
-	if _, err := db.Exec("PRAGMA busy_timeout=5000"); err != nil {
+	if _, err := db.ExecContext(ctx, "PRAGMA busy_timeout=5000"); err != nil {
 		return fmt.Errorf("set busy_timeout: %w", err)
 	}
-	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
+	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys=ON"); err != nil {
 		return fmt.Errorf("set foreign_keys: %w", err)
 	}
 	return nil
@@ -102,8 +105,10 @@ var allMigrations = []migrationStep{
 }
 
 func (s *SQLiteStore) migrate() error {
+	ctx := context.Background()
+
 	var version int
-	if err := s.writer.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+	if err := s.writer.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return fmt.Errorf("read user_version: %w", err)
 	}
 
@@ -111,7 +116,7 @@ func (s *SQLiteStore) migrate() error {
 		if version >= m.version {
 			continue
 		}
-		if err := s.applyMigration(m); err != nil {
+		if err := s.applyMigration(ctx, m); err != nil {
 			return err
 		}
 		version = m.version
@@ -120,22 +125,22 @@ func (s *SQLiteStore) migrate() error {
 	return nil
 }
 
-func (s *SQLiteStore) applyMigration(m migrationStep) error {
+func (s *SQLiteStore) applyMigration(ctx context.Context, m migrationStep) error {
 	ddl, err := migrations.ReadFile(m.file)
 	if err != nil {
 		return fmt.Errorf("read migration %d: %w", m.version, err)
 	}
 
-	tx, err := s.writer.Begin()
+	tx, err := s.writer.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin migration %d tx: %w", m.version, err)
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	if _, err := tx.Exec(string(ddl)); err != nil {
+	if _, err := tx.ExecContext(ctx, string(ddl)); err != nil {
 		return fmt.Errorf("exec migration %d: %w", m.version, err)
 	}
-	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", m.version)); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", m.version)); err != nil {
 		return fmt.Errorf("set user_version to %d: %w", m.version, err)
 	}
 
@@ -165,6 +170,9 @@ func (s *SQLiteStore) PutBlobs(ctx context.Context, blobs []types.Blob) error {
 
 	for i := range blobs {
 		b := &blobs[i]
+		if err := ensureSQLiteBlobInvariant(ctx, tx, b); err != nil {
+			return err
+		}
 		if _, err := stmt.ExecContext(ctx,
 			b.Height, b.Namespace[:], b.Commitment, b.Data, b.ShareVersion, b.Signer, b.Index,
 		); err != nil {
@@ -357,4 +365,63 @@ func scanBlobRow(rows *sql.Rows) (types.Blob, error) {
 	}
 	copy(b.Namespace[:], nsBytes)
 	return b, nil
+}
+
+func ensureSQLiteBlobInvariant(ctx context.Context, tx *sql.Tx, b *types.Blob) error {
+	existingByIndex, err := queryBlobByIndex(ctx, tx, b.Namespace, b.Height, b.Index)
+	if err != nil {
+		return err
+	}
+	if existingByIndex != nil && !sameBlob(existingByIndex, b) {
+		return fmt.Errorf("blob conflict at height %d namespace %s index %d", b.Height, b.Namespace, b.Index)
+	}
+
+	existingByCommitment, err := queryBlobByCommitment(ctx, tx, b.Commitment)
+	if err != nil {
+		return err
+	}
+	if existingByCommitment != nil && !sameBlob(existingByCommitment, b) {
+		return fmt.Errorf("blob commitment conflict for %x", b.Commitment)
+	}
+
+	return nil
+}
+
+func queryBlobByIndex(ctx context.Context, tx *sql.Tx, ns types.Namespace, height uint64, index int) (*types.Blob, error) {
+	row := tx.QueryRowContext(ctx,
+		`SELECT height, namespace, commitment, data, share_version, signer, blob_index
+		 FROM blobs WHERE namespace = ? AND height = ? AND blob_index = ?`,
+		ns[:], height, index)
+	b, err := scanBlob(row)
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query blob by index: %w", err)
+	}
+	return b, nil
+}
+
+func queryBlobByCommitment(ctx context.Context, tx *sql.Tx, commitment []byte) (*types.Blob, error) {
+	row := tx.QueryRowContext(ctx,
+		`SELECT height, namespace, commitment, data, share_version, signer, blob_index
+		 FROM blobs WHERE commitment = ? LIMIT 1`, commitment)
+	b, err := scanBlob(row)
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query blob by commitment: %w", err)
+	}
+	return b, nil
+}
+
+func sameBlob(a, b *types.Blob) bool {
+	return a.Height == b.Height &&
+		a.Namespace == b.Namespace &&
+		a.Index == b.Index &&
+		a.ShareVersion == b.ShareVersion &&
+		bytes.Equal(a.Commitment, b.Commitment) &&
+		bytes.Equal(a.Data, b.Data) &&
+		bytes.Equal(a.Signer, b.Signer)
 }

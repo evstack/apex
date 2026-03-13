@@ -32,6 +32,8 @@ import (
 // Set via ldflags at build time.
 var version = "dev"
 
+const dataSourceTypeApp = "app"
+
 func main() {
 	if err := rootCmd().Execute(); err != nil {
 		os.Exit(1)
@@ -112,7 +114,7 @@ func startCmd() *cobra.Command {
 				Str("version", version).
 				Str("datasource_type", cfg.DataSource.Type).
 				Int("namespaces", len(cfg.DataSource.Namespaces))
-			if cfg.DataSource.Type == "app" {
+			if cfg.DataSource.Type == dataSourceTypeApp {
 				startLog = startLog.Str("app_grpc_addr", cfg.DataSource.CelestiaAppGRPCAddr)
 			} else {
 				startLog = startLog.Str("node_url", cfg.DataSource.CelestiaNodeURL)
@@ -168,7 +170,7 @@ func setupProfiling(cfg *config.Config) *profile.Server {
 
 func openDataSource(ctx context.Context, cfg *config.Config) (fetch.DataFetcher, fetch.ProofForwarder, error) {
 	switch cfg.DataSource.Type {
-	case "app":
+	case dataSourceTypeApp:
 		appFetcher, err := fetch.NewCelestiaAppFetcher(cfg.DataSource.CelestiaAppGRPCAddr, cfg.DataSource.AuthToken, log.Logger)
 		if err != nil {
 			return nil, nil, fmt.Errorf("create celestia-app fetcher: %w", err)
@@ -215,7 +217,7 @@ func persistNamespaces(ctx context.Context, db store.Store, namespaces []types.N
 }
 
 func maybeBackfillSourceOption(cfg *config.Config, logger zerolog.Logger) (syncer.Option, func(), error) {
-	if cfg.DataSource.Type != "app" || cfg.DataSource.BackfillSource != "db" {
+	if cfg.DataSource.Type != dataSourceTypeApp || cfg.DataSource.BackfillSource != "db" {
 		return nil, nil, nil
 	}
 
@@ -328,7 +330,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 
 	// Start gRPC server.
 	grpcSrv := grpcapi.NewServer(svc, log.Logger)
-	lis, err := net.Listen("tcp", cfg.RPC.GRPCListenAddr)
+	lis, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.RPC.GRPCListenAddr)
 	if err != nil {
 		_ = httpSrv.Close()
 		return fmt.Errorf("listen gRPC: %w", err)

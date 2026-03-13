@@ -87,9 +87,16 @@ type S3Store struct {
 	blobBuf   map[blobChunkKey][]types.Blob
 	headerBuf map[uint64][]*types.Header
 	commitBuf []commitEntry
+	inflight  flushBuffers
 
 	nsMu    sync.Mutex // guards PutNamespace read-modify-write (separate from buffer mu)
 	flushMu sync.Mutex // serializes flush operations
+}
+
+type flushBuffers struct {
+	blobBuf   map[blobChunkKey][]types.Blob
+	headerBuf map[uint64][]*types.Header
+	commitBuf []commitEntry
 }
 
 // NewS3Store creates a new S3Store from the given config.
@@ -203,6 +210,13 @@ func (s *S3Store) PutBlobs(ctx context.Context, blobs []types.Blob) error {
 
 	for i := range blobs {
 		b := &blobs[i]
+		exists, err := s.ensureBufferedBlobInvariant(b, s.blobBuf, s.inflight.blobBuf)
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
 		key := blobChunkKey{namespace: b.Namespace, chunkStart: s.chunkStart(b.Height)}
 		s.blobBuf[key] = append(s.blobBuf[key], *b)
 
@@ -307,7 +321,10 @@ func (s *S3Store) GetBlobs(ctx context.Context, ns types.Namespace, startHeight,
 		return nil, err
 	}
 
-	allBlobs := deduplicateBlobs(append(buffered, s3Blobs...))
+	allBlobs, err := mergeUniqueBlobs(append(buffered, s3Blobs...))
+	if err != nil {
+		return nil, err
+	}
 
 	sort.Slice(allBlobs, func(i, j int) bool {
 		if allBlobs[i].Height != allBlobs[j].Height {
@@ -325,16 +342,8 @@ func (s *S3Store) collectBufferedBlobs(ns types.Namespace, startHeight, endHeigh
 	defer s.mu.Unlock()
 
 	var result []types.Blob
-	for key, bufs := range s.blobBuf {
-		if key.namespace != ns {
-			continue
-		}
-		for i := range bufs {
-			if bufs[i].Height >= startHeight && bufs[i].Height <= endHeight {
-				result = append(result, bufs[i])
-			}
-		}
-	}
+	result = collectBlobsInRange(result, s.blobBuf, ns, startHeight, endHeight)
+	result = collectBlobsInRange(result, s.inflight.blobBuf, ns, startHeight, endHeight)
 	return result
 }
 
@@ -388,18 +397,11 @@ func (s *S3Store) GetBlobByCommitment(ctx context.Context, commitment []byte) (*
 	commitHex := hex.EncodeToString(commitment)
 
 	s.mu.Lock()
-	for _, entry := range s.commitBuf {
-		if entry.commitmentHex == commitHex {
-			ns, err := types.NamespaceFromHex(entry.pointer.Namespace)
-			if err == nil {
-				if b := s.findBlobInBufferLocked(ns, entry.pointer.Height, entry.pointer.Index); b != nil {
-					s.mu.Unlock()
-					return b, nil
-				}
-			}
-		}
-	}
+	b := s.findCommitEntryBlobLocked(commitHex)
 	s.mu.Unlock()
+	if b != nil {
+		return b, nil
+	}
 
 	// Look up commitment index in S3.
 	key := s.key("index", "commitments", commitHex+".json")
@@ -549,14 +551,19 @@ func (s *S3Store) flush(ctx context.Context) error {
 	blobBuf := s.blobBuf
 	headerBuf := s.headerBuf
 	commitBuf := s.commitBuf
+	if len(blobBuf) == 0 && len(headerBuf) == 0 && len(commitBuf) == 0 {
+		s.mu.Unlock()
+		return nil
+	}
+	s.inflight = flushBuffers{
+		blobBuf:   blobBuf,
+		headerBuf: headerBuf,
+		commitBuf: commitBuf,
+	}
 	s.blobBuf = make(map[blobChunkKey][]types.Blob)
 	s.headerBuf = make(map[uint64][]*types.Header)
 	s.commitBuf = nil
 	s.mu.Unlock()
-
-	if len(blobBuf) == 0 && len(headerBuf) == 0 && len(commitBuf) == 0 {
-		return nil
-	}
 
 	// Use a semaphore to bound concurrency.
 	sem := make(chan struct{}, maxFlushConcurrency)
@@ -612,7 +619,13 @@ func (s *S3Store) flush(ctx context.Context) error {
 	}
 
 	wg.Wait()
-	return errors.Join(errs...)
+	if err := errors.Join(errs...); err != nil {
+		s.restoreInflight(blobBuf, headerBuf, commitBuf)
+		return err
+	}
+
+	s.clearInflight()
+	return nil
 }
 
 func (s *S3Store) flushBlobChunk(ctx context.Context, key blobChunkKey, newBlobs []types.Blob) error {
@@ -624,7 +637,7 @@ func (s *S3Store) flushBlobChunk(ctx context.Context, key blobChunkKey, newBlobs
 		return fmt.Errorf("read blob chunk for merge: %w", err)
 	}
 
-	var merged []types.Blob
+	merged := make([]types.Blob, 0, len(newBlobs))
 	if existing != nil {
 		merged, err = decodeS3Blobs(existing)
 		if err != nil {
@@ -633,7 +646,10 @@ func (s *S3Store) flushBlobChunk(ctx context.Context, key blobChunkKey, newBlobs
 	}
 
 	merged = append(merged, newBlobs...)
-	merged = deduplicateBlobs(merged)
+	merged, err = mergeUniqueBlobs(merged)
+	if err != nil {
+		return err
+	}
 	sort.Slice(merged, func(i, j int) bool {
 		if merged[i].Height != merged[j].Height {
 			return merged[i].Height < merged[j].Height
@@ -698,12 +714,14 @@ func (s *S3Store) findBlobInBuffer(ns types.Namespace, height uint64, index int)
 }
 
 func (s *S3Store) findBlobInBufferLocked(ns types.Namespace, height uint64, index int) *types.Blob {
-	key := blobChunkKey{namespace: ns, chunkStart: s.chunkStart(height)}
-	for i := range s.blobBuf[key] {
-		b := &s.blobBuf[key][i]
-		if b.Height == height && b.Index == index {
-			cp := *b
-			return &cp
+	for _, buf := range []map[blobChunkKey][]types.Blob{s.blobBuf, s.inflight.blobBuf} {
+		key := blobChunkKey{namespace: ns, chunkStart: s.chunkStart(height)}
+		for i := range buf[key] {
+			b := &buf[key][i]
+			if b.Height == height && b.Index == index {
+				cp := *b
+				return &cp
+			}
 		}
 	}
 	return nil
@@ -714,13 +732,89 @@ func (s *S3Store) findHeaderInBuffer(height uint64) *types.Header {
 	defer s.mu.Unlock()
 
 	cs := s.chunkStart(height)
-	for _, h := range s.headerBuf[cs] {
-		if h.Height == height {
-			cp := *h
-			return &cp
+	for _, buf := range []map[uint64][]*types.Header{s.headerBuf, s.inflight.headerBuf} {
+		for _, h := range buf[cs] {
+			if h.Height == height {
+				cp := *h
+				return &cp
+			}
 		}
 	}
 	return nil
+}
+
+func collectBlobsInRange(result []types.Blob, buf map[blobChunkKey][]types.Blob, ns types.Namespace, startHeight, endHeight uint64) []types.Blob {
+	for key, blobs := range buf {
+		if key.namespace != ns {
+			continue
+		}
+		for i := range blobs {
+			if blobs[i].Height >= startHeight && blobs[i].Height <= endHeight {
+				result = append(result, blobs[i])
+			}
+		}
+	}
+	return result
+}
+
+func (s *S3Store) ensureBufferedBlobInvariant(b *types.Blob, bufs ...map[blobChunkKey][]types.Blob) (bool, error) {
+	for _, buf := range bufs {
+		key := blobChunkKey{namespace: b.Namespace, chunkStart: s.chunkStart(b.Height)}
+		if blobs, ok := buf[key]; ok {
+			for i := range blobs {
+				existing := &blobs[i]
+				if existing.Height == b.Height && existing.Namespace == b.Namespace && existing.Index == b.Index {
+					if !sameBlob(existing, b) {
+						return false, fmt.Errorf("blob conflict at height %d namespace %s index %d", b.Height, b.Namespace, b.Index)
+					}
+					return true, nil
+				}
+				if bytes.Equal(existing.Commitment, b.Commitment) && !sameBlob(existing, b) {
+					return false, fmt.Errorf("blob commitment conflict for %x", b.Commitment)
+				}
+			}
+		}
+	}
+	return false, nil
+}
+
+// findCommitEntryBlobLocked searches both commitBuf and inflight.commitBuf
+// for a matching commitment and returns the corresponding buffered blob.
+// Caller must hold s.mu.
+func (s *S3Store) findCommitEntryBlobLocked(commitHex string) *types.Blob {
+	for _, entries := range [2][]commitEntry{s.commitBuf, s.inflight.commitBuf} {
+		for _, entry := range entries {
+			if entry.commitmentHex == commitHex {
+				ns, err := types.NamespaceFromHex(entry.pointer.Namespace)
+				if err == nil {
+					if b := s.findBlobInBufferLocked(ns, entry.pointer.Height, entry.pointer.Index); b != nil {
+						return b
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (s *S3Store) restoreInflight(blobBuf map[blobChunkKey][]types.Blob, headerBuf map[uint64][]*types.Header, commitBuf []commitEntry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for key, blobs := range blobBuf {
+		s.blobBuf[key] = append(blobs, s.blobBuf[key]...)
+	}
+	for cs, headers := range headerBuf {
+		s.headerBuf[cs] = append(headers, s.headerBuf[cs]...)
+	}
+	s.commitBuf = append(commitBuf, s.commitBuf...)
+	s.inflight = flushBuffers{}
+}
+
+func (s *S3Store) clearInflight() {
+	s.mu.Lock()
+	s.inflight = flushBuffers{}
+	s.mu.Unlock()
 }
 
 // --- S3 helpers ---
@@ -835,23 +929,36 @@ func decodeS3Headers(data []byte) ([]types.Header, error) {
 
 // --- Deduplication ---
 
-func deduplicateBlobs(blobs []types.Blob) []types.Blob {
-	type blobKey struct {
+func mergeUniqueBlobs(blobs []types.Blob) ([]types.Blob, error) {
+	type positionKey struct {
 		height    uint64
 		namespace types.Namespace
 		index     int
 	}
-	seen := make(map[blobKey]struct{}, len(blobs))
+	byPosition := make(map[positionKey]types.Blob, len(blobs))
+	byCommitment := make(map[string]types.Blob, len(blobs))
 	out := make([]types.Blob, 0, len(blobs))
+
 	for _, b := range blobs {
-		k := blobKey{height: b.Height, namespace: b.Namespace, index: b.Index}
-		if _, ok := seen[k]; ok {
+		pos := positionKey{height: b.Height, namespace: b.Namespace, index: b.Index}
+		if existing, ok := byPosition[pos]; ok {
+			if !sameBlob(&existing, &b) {
+				return nil, fmt.Errorf("blob conflict at height %d namespace %s index %d", b.Height, b.Namespace, b.Index)
+			}
 			continue
 		}
-		seen[k] = struct{}{}
+		commitKey := string(b.Commitment)
+		if existing, ok := byCommitment[commitKey]; ok {
+			if !sameBlob(&existing, &b) {
+				return nil, fmt.Errorf("blob commitment conflict for %x", b.Commitment)
+			}
+			continue
+		}
+		byPosition[pos] = b
+		byCommitment[commitKey] = b
 		out = append(out, b)
 	}
-	return out
+	return out, nil
 }
 
 func deduplicateHeaders(headers []types.Header) []types.Header {

@@ -63,7 +63,7 @@ func (c *rpcClient) call(ctx context.Context, method string, params ...any) (jso
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.client.Do(req)
+	resp, err := c.client.Do(req) //nolint:gosec // URL comes from user-configured --url flag, not untrusted input
 	if err != nil {
 		return nil, fmt.Errorf("send request: %w", err)
 	}
@@ -93,7 +93,7 @@ func (c *rpcClient) fetchHealth(ctx context.Context) (json.RawMessage, error) {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
-	resp, err := c.client.Do(req)
+	resp, err := c.client.Do(req) //nolint:gosec // URL comes from user-configured --url flag, not untrusted input
 	if err != nil {
 		return nil, fmt.Errorf("send request: %w", err)
 	}

@@ -24,13 +24,13 @@ type mockCometService struct {
 }
 
 func (m *mockCometService) GetBlockByHeight(_ context.Context, req *cometpb.GetBlockByHeightRequest) (*cometpb.GetBlockByHeightResponse, error) {
-	resp, ok := m.blocks[req.Height]
+	resp, ok := m.blocks[req.GetHeight()]
 	if !ok {
 		return &cometpb.GetBlockByHeightResponse{
 			BlockId: &cometpb.BlockID{Hash: []byte("default")},
 			Block: &cometpb.Block{
 				Header: &cometpb.Header{
-					Height: req.Height,
+					Height: req.GetHeight(),
 					Time:   timestamppb.Now(),
 				},
 				Data: &cometpb.Data{},

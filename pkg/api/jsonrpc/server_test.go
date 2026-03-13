@@ -276,6 +276,39 @@ func TestJSONRPCBlobGetAll(t *testing.T) {
 	}
 }
 
+func TestJSONRPCBlobGetAllAllowsCompatibilitySizedNamespaceList(t *testing.T) {
+	st := newMockStore()
+	namespaces := make([][]byte, 0, 17)
+	for i := range 17 {
+		ns := testNamespace(byte(i + 1))
+		namespaces = append(namespaces, ns[:])
+		st.blobs[10] = append(st.blobs[10], types.Blob{
+			Height:     10,
+			Namespace:  ns,
+			Data:       []byte{byte(i)},
+			Commitment: []byte{byte(i)},
+			Index:      0,
+		})
+	}
+
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
+	svc := api.NewService(st, &mockFetcher{}, nil, notifier, zerolog.Nop())
+	srv := NewServer(svc, zerolog.Nop())
+
+	resp := doRPC(t, srv, "blob.GetAll", uint64(10), namespaces)
+	if resp.Error != nil {
+		t.Fatalf("RPC error: %s", resp.Error.Message)
+	}
+
+	var blobs []json.RawMessage
+	if err := json.Unmarshal(resp.Result, &blobs); err != nil {
+		t.Fatalf("unmarshal blobs: %v", err)
+	}
+	if len(blobs) != 17 {
+		t.Fatalf("got %d blobs, want 17", len(blobs))
+	}
+}
+
 func TestJSONRPCBlobGetByCommitment(t *testing.T) {
 	st := newMockStore()
 	ns := testNamespace(1)

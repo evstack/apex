@@ -71,11 +71,11 @@ func marshalBlobProto(blob Blob) ([]byte, error) {
 	if len(blob.Data) == 0 {
 		return nil, errors.New("blob data is required")
 	}
-	namespaceVersion := blob.Namespace[0]
-	namespaceID := blob.Namespace[1:]
-	if len(namespaceID) != types.NamespaceSize-1 {
+	if len(blob.Namespace) != types.NamespaceSize {
 		return nil, fmt.Errorf("invalid namespace size: got %d, want %d", len(blob.Namespace), types.NamespaceSize)
 	}
+	namespaceVersion := blob.Namespace[0]
+	namespaceID := blob.Namespace[1:]
 
 	out := protowire.AppendTag(nil, 1, protowire.BytesType)
 	out = protowire.AppendBytes(out, namespaceID)

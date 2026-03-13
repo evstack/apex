@@ -201,6 +201,12 @@ func TestParseBlobTxLegacyFormat(t *testing.T) {
 	if string(parsed.PFB.Signer) != "legacy-signer" {
 		t.Fatalf("signer = %q, want %q", parsed.PFB.Signer, "legacy-signer")
 	}
+	if len(parsed.PFB.ShareCommitments) != 1 {
+		t.Fatalf("got %d commitments, want 1", len(parsed.PFB.ShareCommitments))
+	}
+	if string(parsed.PFB.ShareCommitments[0]) != "legacy-commit" {
+		t.Fatalf("commitment = %q, want %q", parsed.PFB.ShareCommitments[0], "legacy-commit")
+	}
 }
 
 func TestParseBlobTxNotBlobTx(t *testing.T) {

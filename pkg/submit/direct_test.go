@@ -3,6 +3,7 @@ package submit
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -180,6 +181,12 @@ func TestDirectSubmitterRejectsSignerMismatch(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("expected signer mismatch error, got: %v", err)
+	}
+	if client.broadcastCalls != 0 {
+		t.Fatalf("broadcast calls = %d, want 0", client.broadcastCalls)
 	}
 }
 

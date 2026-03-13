@@ -277,9 +277,10 @@ log:
 }
 
 type apexProcess struct {
-	cmd  *exec.Cmd
-	done chan error
-	logs *bytes.Buffer
+	cmd     *exec.Cmd
+	done    chan struct{}
+	waitErr error
+	logs    *bytes.Buffer
 }
 
 func startApexProcess(t *testing.T, binaryPath string, configPath string) *apexProcess {
@@ -298,11 +299,12 @@ func startApexProcess(t *testing.T, binaryPath string, configPath string) *apexP
 
 	proc := &apexProcess{
 		cmd:  cmd,
-		done: make(chan error, 1),
+		done: make(chan struct{}),
 		logs: &logs,
 	}
 	go func() {
-		proc.done <- cmd.Wait()
+		proc.waitErr = cmd.Wait()
+		close(proc.done)
 	}()
 	return proc
 }
@@ -331,8 +333,8 @@ func waitForApexHTTP(t *testing.T, proc *apexProcess, rpcAddr string) {
 	deadline := time.Now().Add(apexReadyTimeout)
 	for time.Now().Before(deadline) {
 		select {
-		case err := <-proc.done:
-			t.Fatalf("apex exited before becoming ready: %v\n%s", err, proc.logs.String())
+		case <-proc.done:
+			t.Fatalf("apex exited before becoming ready: %v\n%s", proc.waitErr, proc.logs.String())
 		default:
 		}
 
@@ -375,8 +377,8 @@ func waitForIndexedBlob(t *testing.T, proc *apexProcess, rpcAddr string, commitm
 
 	for range submissionPollLimit {
 		select {
-		case err := <-proc.done:
-			t.Fatalf("apex exited before blob was indexed: %v\n%s", err, proc.logs.String())
+		case <-proc.done:
+			t.Fatalf("apex exited before blob was indexed: %v\n%s", proc.waitErr, proc.logs.String())
 		default:
 		}
 
@@ -463,7 +465,8 @@ func doRPC(t *testing.T, proc *apexProcess, rpcAddr string, method string, param
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("perform RPC request: %v\n%s", err, proc.logs.String())
 	}

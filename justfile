@@ -45,5 +45,4 @@ check: tidy-check lint test build
 
 # Run the Docker-backed submission e2e test in the isolated e2e module.
 e2e-submission:
-    cd e2e
-    go test -count=1 -timeout 20m ./...
+    cd e2e && go test -race -count=1 -timeout 20m ./...

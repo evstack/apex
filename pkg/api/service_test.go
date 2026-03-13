@@ -10,6 +10,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/evstack/apex/pkg/store"
+	"github.com/evstack/apex/pkg/submit"
 	"github.com/evstack/apex/pkg/types"
 )
 
@@ -125,13 +126,27 @@ func (m *mockFetcher) SubscribeHeaders(_ context.Context) (<-chan *types.Header,
 
 func (m *mockFetcher) Close() error { return nil }
 
+type mockSubmitter struct {
+	result *submit.Result
+	err    error
+	last   *submit.Request
+}
+
+func (m *mockSubmitter) Submit(_ context.Context, req *submit.Request) (*submit.Result, error) {
+	m.last = req
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.result, nil
+}
+
 func TestServiceBlobGet(t *testing.T) {
 	st := newMockStore()
 	ns := testNamespace(1)
 	commitment := []byte("c1")
 
 	st.blobs[10] = []types.Blob{
-		{Height: 10, Namespace: ns, Data: []byte("d1"), Commitment: commitment, Index: 0},
+		{Height: 10, Namespace: ns, Data: []byte("d1"), Commitment: commitment, Signer: []byte("signer"), Index: 0},
 		{Height: 10, Namespace: ns, Data: []byte("d2"), Commitment: []byte("c2"), Index: 1},
 	}
 
@@ -148,6 +163,9 @@ func TestServiceBlobGet(t *testing.T) {
 	}
 	if _, ok := m["commitment"]; !ok {
 		t.Error("blob JSON missing 'commitment' field")
+	}
+	if _, ok := m["signer"]; !ok {
+		t.Error("blob JSON missing 'signer' field")
 	}
 }
 
@@ -312,5 +330,69 @@ func TestServiceProofForwardingUnavailable(t *testing.T) {
 	_, err = svc.BlobIncluded(context.Background(), 1, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for nil proof forwarder")
+	}
+}
+
+func TestServiceBlobSubmitRequiresSubmitter(t *testing.T) {
+	svc := NewService(newMockStore(), &mockFetcher{}, nil, NewNotifier(16, 1024, zerolog.Nop()), zerolog.Nop())
+
+	_, err := svc.BlobSubmit(context.Background(), json.RawMessage(`[]`), nil)
+	if !errors.Is(err, submit.ErrDisabled) {
+		t.Fatalf("expected submit.ErrDisabled, got %v", err)
+	}
+}
+
+func TestServiceBlobSubmitDelegates(t *testing.T) {
+	ns := testNamespace(5)
+	submitter := &mockSubmitter{result: &submit.Result{Height: 42}}
+	svc := NewService(
+		newMockStore(),
+		&mockFetcher{},
+		nil,
+		NewNotifier(16, 1024, zerolog.Nop()),
+		zerolog.Nop(),
+		WithBlobSubmitter(submitter),
+	)
+
+	blobsRaw, err := json.Marshal([]map[string]any{{
+		"namespace":     ns[:],
+		"data":          []byte("hello"),
+		"share_version": 1,
+		"commitment":    []byte("c1"),
+		"signer":        []byte("signer"),
+		"index":         -1,
+	}})
+	if err != nil {
+		t.Fatalf("marshal blobs: %v", err)
+	}
+	optionsRaw, err := json.Marshal(map[string]any{
+		"gas_price":        0.1,
+		"is_gas_price_set": true,
+		"max_gas_price":    1.5,
+		"tx_priority":      int(submit.PriorityHigh),
+		"signer_address":   "celestia1test",
+	})
+	if err != nil {
+		t.Fatalf("marshal options: %v", err)
+	}
+
+	raw, err := svc.BlobSubmit(context.Background(), blobsRaw, optionsRaw)
+	if err != nil {
+		t.Fatalf("BlobSubmit: %v", err)
+	}
+	if string(raw) != "42" {
+		t.Fatalf("result = %s, want 42", raw)
+	}
+	if submitter.last == nil {
+		t.Fatal("submitter request = nil")
+	}
+	if len(submitter.last.Blobs) != 1 {
+		t.Fatalf("got %d blobs, want 1", len(submitter.last.Blobs))
+	}
+	if submitter.last.Blobs[0].Namespace != ns {
+		t.Fatalf("namespace = %x, want %x", submitter.last.Blobs[0].Namespace, ns)
+	}
+	if submitter.last.Options == nil || submitter.last.Options.TxPriority != submit.PriorityHigh {
+		t.Fatalf("options = %#v, want high priority", submitter.last.Options)
 	}
 }

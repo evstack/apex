@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package cosmos.crypto.secp256k1;
+
+option go_package = "github.com/evstack/apex/pkg/api/grpc/gen/cosmos/crypto/secp256k1;secp256k1";
+
+message PubKey {
+  bytes key = 1;
+}

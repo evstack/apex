@@ -3,9 +3,11 @@ package jsonrpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/evstack/apex/pkg/api"
+	"github.com/evstack/apex/pkg/submit"
 	"github.com/evstack/apex/pkg/types"
 )
 
@@ -96,9 +98,17 @@ func (h *BlobHandler) GetCommitmentProof(_ context.Context, _ uint64, _ []byte, 
 	return nil, errNotSupported
 }
 
-// Submit is not supported — apex is read-only.
-func (h *BlobHandler) Submit(_ context.Context, _ json.RawMessage, _ json.RawMessage) (json.RawMessage, error) {
-	return nil, errReadOnly
+// Submit validates the JSON-RPC payload and delegates to the configured
+// submission backend when write support is enabled.
+func (h *BlobHandler) Submit(ctx context.Context, blobs json.RawMessage, options json.RawMessage) (json.RawMessage, error) {
+	raw, err := h.svc.BlobSubmit(ctx, blobs, options)
+	if errors.Is(err, submit.ErrDisabled) {
+		return nil, errReadOnly
+	}
+	if err != nil {
+		return nil, err
+	}
+	return raw, nil
 }
 
 func bytesToNamespace(b []byte) (types.Namespace, error) {

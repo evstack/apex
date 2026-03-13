@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package celestia.blob.v1;
+
+option go_package = "github.com/evstack/apex/pkg/api/grpc/gen/celestia/blob/v1;blobv1";
+
+// MsgPayForBlobs is the Celestia message included in a Cosmos SDK tx for blob
+// inclusion. Apex only needs the request shape for local tx construction.
+message MsgPayForBlobs {
+  string signer = 1;
+  repeated bytes namespaces = 2;
+  repeated uint32 blob_sizes = 3;
+  repeated bytes share_commitments = 4;
+  repeated uint32 share_versions = 8;
+}
+
+message MsgPayForBlobsResponse {}

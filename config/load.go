@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/evstack/apex/pkg/types"
 	"gopkg.in/yaml.v3"
@@ -56,6 +58,22 @@ data_source:
 
   # Namespaces to index (hex-encoded, 29 bytes = 58 hex chars each).
   namespaces: []
+
+submission:
+  # Enable direct blob submission (updates in development).
+  enabled: false
+  # Cosmos SDK gRPC endpoint for celestia-app submission.
+  app_grpc_addr: ""
+  # Chain ID that will be used when signing transactions.
+  chain_id: ""
+  # Path to a file containing the hex-encoded secp256k1 signing key.
+  signer_key: "/path/to/apex-submission.key"
+  # Default gas price to pay per unit when the request does not override it.
+  gas_price: 0
+  # Maximum gas price that can be spent for a submission.
+  max_gas_price: 0
+  # Seconds to wait for transaction confirmation before timing out.
+  confirmation_timeout: 30
 
 storage:
   # Storage backend: "sqlite" (default) or "s3"
@@ -138,6 +156,9 @@ func Load(path string) (*Config, error) {
 	// Env var override.
 	if token := os.Getenv("APEX_AUTH_TOKEN"); token != "" {
 		cfg.DataSource.AuthToken = token
+	}
+	if err := resolveSubmissionSignerKey(&cfg.Submission, filepath.Dir(path)); err != nil {
+		return nil, fmt.Errorf("resolving submission signer key: %w", err)
 	}
 
 	if err := validate(&cfg); err != nil {
@@ -246,6 +267,9 @@ func validate(cfg *Config) error {
 	if err := validateProfiling(&cfg.Profiling); err != nil {
 		return err
 	}
+	if err := validateSubmission(&cfg.Submission); err != nil {
+		return err
+	}
 	if !validLogLevels[cfg.Log.Level] {
 		return fmt.Errorf("log.level %q is invalid; must be one of trace/debug/info/warn/error/fatal/panic", cfg.Log.Level)
 	}
@@ -303,5 +327,54 @@ func validateProfiling(p *ProfilingConfig) error {
 	if p.Enabled && p.ListenAddr == "" {
 		return errors.New("profiling.listen_addr is required when profiling is enabled")
 	}
+	return nil
+}
+
+func validateSubmission(s *SubmissionConfig) error {
+	if !s.Enabled {
+		return nil
+	}
+	if s.CelestiaAppGRPCAddr == "" {
+		return errors.New("submission.app_grpc_addr is required when submission.enabled is true")
+	}
+	if s.ChainID == "" {
+		return errors.New("submission.chain_id is required when submission.enabled is true")
+	}
+	if s.SignerKey == "" {
+		return errors.New("submission.signer_key is required when submission.enabled is true")
+	}
+	if s.ConfirmationTimeout <= 0 {
+		return errors.New("submission.confirmation_timeout must be positive")
+	}
+	if s.GasPrice < 0 {
+		return errors.New("submission.gas_price must be non-negative")
+	}
+	if s.MaxGasPrice < 0 {
+		return errors.New("submission.max_gas_price must be non-negative")
+	}
+	if s.MaxGasPrice > 0 && s.GasPrice > s.MaxGasPrice {
+		return errors.New("submission.gas_price must not exceed submission.max_gas_price")
+	}
+	return nil
+}
+
+func resolveSubmissionSignerKey(s *SubmissionConfig, baseDir string) error {
+	if !s.Enabled {
+		return nil
+	}
+	keyPath := strings.TrimSpace(s.SignerKey)
+	if keyPath == "" {
+		return nil
+	}
+
+	if !filepath.IsAbs(keyPath) {
+		keyPath = filepath.Join(baseDir, keyPath)
+	}
+
+	keyBytes, err := os.ReadFile(keyPath)
+	if err != nil {
+		return fmt.Errorf("read submission signer key %q: %w", keyPath, err)
+	}
+	s.SignerPrivateKey = strings.TrimSpace(string(keyBytes))
 	return nil
 }

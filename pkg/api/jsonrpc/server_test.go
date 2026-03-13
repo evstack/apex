@@ -14,6 +14,7 @@ import (
 
 	"github.com/evstack/apex/pkg/api"
 	"github.com/evstack/apex/pkg/store"
+	"github.com/evstack/apex/pkg/submit"
 	"github.com/evstack/apex/pkg/types"
 )
 
@@ -124,6 +125,18 @@ func (f *mockFetcher) SubscribeHeaders(_ context.Context) (<-chan *types.Header,
 }
 
 func (f *mockFetcher) Close() error { return nil }
+
+type mockSubmitter struct {
+	result *submit.Result
+	err    error
+}
+
+func (m *mockSubmitter) Submit(_ context.Context, _ *submit.Request) (*submit.Result, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.result, nil
+}
 
 func testNamespace(b byte) types.Namespace {
 	var ns types.Namespace
@@ -364,5 +377,53 @@ func TestJSONRPCStubMethods(t *testing.T) {
 				t.Error("expected error from stub method")
 			}
 		})
+	}
+}
+
+func TestJSONRPCBlobSubmitReadOnlyByDefault(t *testing.T) {
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
+	svc := api.NewService(newMockStore(), &mockFetcher{}, nil, notifier, zerolog.Nop())
+	srv := NewServer(svc, zerolog.Nop())
+
+	resp := doRPC(t, srv, "blob.Submit", []map[string]any{}, nil)
+	if resp.Error == nil {
+		t.Fatal("expected read-only error")
+	}
+	if resp.Error.Message != errReadOnly.Error() {
+		t.Fatalf("error = %q, want %q", resp.Error.Message, errReadOnly.Error())
+	}
+}
+
+func TestJSONRPCBlobSubmitDelegates(t *testing.T) {
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
+	svc := api.NewService(
+		newMockStore(),
+		&mockFetcher{},
+		nil,
+		notifier,
+		zerolog.Nop(),
+		api.WithBlobSubmitter(&mockSubmitter{result: &submit.Result{Height: 77}}),
+	)
+	srv := NewServer(svc, zerolog.Nop())
+
+	ns := testNamespace(9)
+	resp := doRPC(t, srv, "blob.Submit", []map[string]any{{
+		"namespace":     ns[:],
+		"data":          []byte("hello"),
+		"share_version": 1,
+		"commitment":    []byte("c1"),
+		"signer":        []byte("signer"),
+		"index":         -1,
+	}}, map[string]any{
+		"gas_price":        0.1,
+		"is_gas_price_set": true,
+		"max_gas_price":    1.5,
+		"tx_priority":      int(submit.PriorityHigh),
+	})
+	if resp.Error != nil {
+		t.Fatalf("RPC error: %s", resp.Error.Message)
+	}
+	if string(resp.Result) != "77" {
+		t.Fatalf("result = %s, want 77", resp.Result)
 	}
 }

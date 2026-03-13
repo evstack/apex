@@ -16,6 +16,7 @@ type Config struct {
 	Metrics      MetricsConfig      `yaml:"metrics"`
 	Profiling    ProfilingConfig    `yaml:"profiling"`
 	Log          LogConfig          `yaml:"log"`
+	Submission   SubmissionConfig   `yaml:"submission"`
 }
 
 // DataSourceConfig configures the Celestia data source.
@@ -92,6 +93,18 @@ type LogConfig struct {
 	Format string `yaml:"format"`
 }
 
+// SubmissionConfig contains settings for the future blob submission pipeline.
+type SubmissionConfig struct {
+	Enabled             bool    `yaml:"enabled"`
+	CelestiaAppGRPCAddr string  `yaml:"app_grpc_addr"`
+	ChainID             string  `yaml:"chain_id"`
+	SignerKey           string  `yaml:"signer_key"`
+	SignerPrivateKey    string  `yaml:"-"`
+	GasPrice            float64 `yaml:"gas_price"`
+	MaxGasPrice         float64 `yaml:"max_gas_price"`
+	ConfirmationTimeout int     `yaml:"confirmation_timeout"` // seconds
+}
+
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
@@ -119,6 +132,15 @@ func DefaultConfig() Config {
 		Subscription: SubscriptionConfig{
 			BufferSize:     64,
 			MaxSubscribers: 1024,
+		},
+		Submission: SubmissionConfig{
+			Enabled:             false,
+			CelestiaAppGRPCAddr: "",
+			ChainID:             "",
+			SignerKey:           "",
+			GasPrice:            0,
+			MaxGasPrice:         0,
+			ConfirmationTimeout: 30,
 		},
 		Metrics: MetricsConfig{
 			Enabled:    true,

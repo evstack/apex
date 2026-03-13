@@ -10,6 +10,9 @@ import (
 // NamespaceSize is the size of a Celestia namespace in bytes.
 const NamespaceSize = 29
 
+// ProtoBlobTxTypeID is the protobuf type identifier used by Celestia BlobTx envelopes.
+const ProtoBlobTxTypeID = "BLOB"
+
 // Namespace is a 29-byte Celestia namespace identifier.
 type Namespace [NamespaceSize]byte
 
@@ -27,6 +30,16 @@ func NamespaceFromHex(s string) (Namespace, error) {
 	}
 	if len(b) != NamespaceSize {
 		return Namespace{}, fmt.Errorf("expected %d bytes, got %d", NamespaceSize, len(b))
+	}
+	var ns Namespace
+	copy(ns[:], b)
+	return ns, nil
+}
+
+// NamespaceFromBytes converts a byte slice into a Namespace.
+func NamespaceFromBytes(b []byte) (Namespace, error) {
+	if len(b) != NamespaceSize {
+		return Namespace{}, fmt.Errorf("invalid namespace size: got %d, want %d", len(b), NamespaceSize)
 	}
 	var ns Namespace
 	copy(ns[:], b)

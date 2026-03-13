@@ -13,7 +13,7 @@ const (
 	// legacyBlobTxTypeID is the trailing byte used by older BlobTx encodings.
 	legacyBlobTxTypeID = 0x62
 	// protoBlobTxTypeID is the current protobuf type identifier used by Celestia.
-	protoBlobTxTypeID = "BLOB"
+	protoBlobTxTypeID = types.ProtoBlobTxTypeID
 	// msgPayForBlobsTypeURL is the protobuf Any type URL for MsgPayForBlobs.
 	msgPayForBlobsTypeURL = "/celestia.blob.v1.MsgPayForBlobs"
 )

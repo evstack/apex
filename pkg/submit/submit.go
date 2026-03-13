@@ -139,10 +139,5 @@ func decodeOptions(raw json.RawMessage) (*TxConfig, error) {
 }
 
 func namespaceFromBytes(b []byte) (types.Namespace, error) {
-	if len(b) != types.NamespaceSize {
-		return types.Namespace{}, fmt.Errorf("invalid namespace size: got %d, want %d", len(b), types.NamespaceSize)
-	}
-	var ns types.Namespace
-	copy(ns[:], b)
-	return ns, nil
+	return types.NamespaceFromBytes(b)
 }

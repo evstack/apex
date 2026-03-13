@@ -380,14 +380,6 @@ func resolveSubmissionSignerKeyPath(s *SubmissionConfig, baseDir string) error {
 		return fmt.Errorf("submission signer key %q must be a file", keyPath)
 	}
 
-	keyFile, err := os.Open(keyPath)
-	if err != nil {
-		return fmt.Errorf("open submission signer key %q: %w", keyPath, err)
-	}
-	if err := keyFile.Close(); err != nil {
-		return fmt.Errorf("close submission signer key %q: %w", keyPath, err)
-	}
-
 	s.SignerKey = keyPath
 	return nil
 }

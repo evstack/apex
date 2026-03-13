@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	protoBlobTxTypeID                = "BLOB"
+	protoBlobTxTypeID                = types.ProtoBlobTxTypeID
 	shareSizeBytes                   = 512
 	firstSparseShareContentSize      = 478
 	continuationSparseShareDataBytes = 482

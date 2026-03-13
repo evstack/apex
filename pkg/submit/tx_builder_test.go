@@ -11,6 +11,8 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
+const testSignerAddress = "celestia1test"
+
 func TestBuildMsgPayForBlobs(t *testing.T) {
 	ns1 := testNamespace(1)
 	ns2 := testNamespace(2)

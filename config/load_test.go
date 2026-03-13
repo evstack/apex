@@ -110,84 +110,70 @@ log:
 	}
 }
 
-func TestSubmissionRequiresAppGRPCHost(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+func TestSubmissionValidationRejectsIncompleteConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		yaml      string
+		wantError string
+	}{
+		{
+			name: "missing app_grpc_addr",
+			yaml: `
 submission:
   enabled: true
   app_grpc_addr: ""
   chain_id: "mychain"
-
-log:
-  level: "info"
-  format: "json"
-`
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected validation error, got nil")
-	}
-	if !strings.Contains(err.Error(), "submission.app_grpc_addr is required") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestSubmissionRequiresChainID(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+`,
+			wantError: "submission.app_grpc_addr is required",
+		},
+		{
+			name: "missing chain_id",
+			yaml: `
 submission:
   enabled: true
   app_grpc_addr: "localhost:9090"
   chain_id: ""
-
-log:
-  level: "info"
-  format: "json"
-`
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected validation error, got nil")
-	}
-	if !strings.Contains(err.Error(), "submission.chain_id is required") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestSubmissionRequiresSignerKey(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+`,
+			wantError: "submission.chain_id is required",
+		},
+		{
+			name: "missing signer_key",
+			yaml: `
 submission:
   enabled: true
   app_grpc_addr: "localhost:9090"
   chain_id: "mychain"
   signer_key: ""
+`,
+			wantError: "submission.signer_key is required",
+		},
+	}
 
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			path := filepath.Join(dir, "config.yaml")
+			content := tt.yaml + `
 log:
   level: "info"
   format: "json"
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
 
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("expected validation error, got nil")
-	}
-	if !strings.Contains(err.Error(), "submission.signer_key is required") {
-		t.Fatalf("unexpected error: %v", err)
+			_, err := Load(path)
+			if err == nil {
+				t.Fatal("expected validation error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("error = %v, want substring %q", err, tt.wantError)
+			}
+		})
 	}
 }
 

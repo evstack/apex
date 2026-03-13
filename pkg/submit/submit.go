@@ -1,6 +1,7 @@
 package submit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -130,13 +131,39 @@ func decodeBlobs(raw json.RawMessage) ([]Blob, error) {
 }
 
 func decodeOptions(raw json.RawMessage) (*TxConfig, error) {
-	if len(raw) == 0 || string(raw) == "null" {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		return nil, nil
 	}
 
 	var cfg TxConfig
-	if err := json.Unmarshal(raw, &cfg); err != nil {
+	if err := json.Unmarshal(trimmed, &cfg); err != nil {
 		return nil, fmt.Errorf("decode submit options: %w", err)
 	}
+	if err := validateTxConfig(&cfg); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
+}
+
+func validateTxConfig(cfg *TxConfig) error {
+	if cfg == nil {
+		return nil
+	}
+	if cfg.GasPrice < 0 {
+		return errors.New("decode submit options: gas_price must be non-negative")
+	}
+	if cfg.MaxGasPrice < 0 {
+		return errors.New("decode submit options: max_gas_price must be non-negative")
+	}
+	if cfg.MaxGasPrice > 0 && (cfg.IsGasPriceSet || cfg.GasPrice > 0) && cfg.GasPrice > cfg.MaxGasPrice {
+		return errors.New("decode submit options: gas_price must not exceed max_gas_price")
+	}
+	if cfg.TxPriority != 0 &&
+		cfg.TxPriority != PriorityLow &&
+		cfg.TxPriority != PriorityMedium &&
+		cfg.TxPriority != PriorityHigh {
+		return fmt.Errorf("decode submit options: invalid tx_priority %d", cfg.TxPriority)
+	}
+	return nil
 }

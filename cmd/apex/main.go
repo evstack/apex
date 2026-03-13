@@ -173,7 +173,12 @@ func setupProfiling(cfg *config.Config) *profile.Server {
 func openDataSource(ctx context.Context, cfg *config.Config) (fetch.DataFetcher, fetch.ProofForwarder, error) {
 	switch cfg.DataSource.Type {
 	case dataSourceTypeApp:
-		appFetcher, err := fetch.NewCelestiaAppFetcher(cfg.DataSource.CelestiaAppGRPCAddr, cfg.DataSource.AuthToken, log.Logger)
+		appFetcher, err := fetch.NewCelestiaAppFetcher(
+			cfg.DataSource.CelestiaAppGRPCAddr,
+			cfg.DataSource.AuthToken,
+			cfg.DataSource.CelestiaAppGRPCInsecure,
+			log.Logger,
+		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("create celestia-app fetcher: %w", err)
 		}
@@ -352,7 +357,10 @@ func openBlobSubmitter(cfg *config.Config) (*submit.DirectSubmitter, error) {
 		return nil, nil
 	}
 
-	appClient, err := submit.NewGRPCAppClient(cfg.Submission.CelestiaAppGRPCAddr)
+	appClient, err := submit.NewGRPCAppClient(
+		cfg.Submission.CelestiaAppGRPCAddr,
+		cfg.Submission.CelestiaAppGRPCInsecure,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create submission app client: %w", err)
 	}

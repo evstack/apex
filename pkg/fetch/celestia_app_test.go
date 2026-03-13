@@ -234,7 +234,7 @@ func TestSubscribeHeaders(t *testing.T) {
 }
 
 func TestCloseIdempotent(t *testing.T) {
-	f, err := NewCelestiaAppFetcher("localhost:26657", "", zerolog.Nop())
+	f, err := NewCelestiaAppFetcher("localhost:26657", "", false, zerolog.Nop())
 	if err != nil {
 		t.Fatalf("NewCelestiaAppFetcher: %v", err)
 	}

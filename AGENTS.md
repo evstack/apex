@@ -19,7 +19,7 @@ just tidy      # go mod tidy
 
 ### Data Flow
 
-```
+```text
 Celestia Node → Fetcher → Sync Coordinator → Store (SQLite)
                                             → Notifier → Subscribers
                           ↕
@@ -30,7 +30,7 @@ The sync coordinator runs in two phases: **backfill** (historical blocks in batc
 
 ### File Structure
 
-```
+```text
 cmd/apex/
   main.go             CLI entrypoint, server wiring, graceful shutdown
   client.go           Thin HTTP JSON-RPC client for CLI commands

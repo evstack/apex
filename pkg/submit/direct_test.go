@@ -191,6 +191,47 @@ func TestDirectSubmitterRejectsSignerMismatch(t *testing.T) {
 	}
 }
 
+func TestDirectSubmitterRejectsPerRequestMaxGasPrice(t *testing.T) {
+	t.Parallel()
+
+	signer := mustSigner(t)
+	client := &fakeAppClient{
+		accountInfos: []*AccountInfo{{
+			Address:       signer.Address(),
+			AccountNumber: 7,
+			Sequence:      1,
+		}},
+	}
+
+	submitter, err := NewDirectSubmitter(client, signer, DirectConfig{
+		ChainID:             "mocha-4",
+		GasPrice:            0.002,
+		MaxGasPrice:         0.01,
+		ConfirmationTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewDirectSubmitter: %v", err)
+	}
+
+	_, err = submitter.Submit(context.Background(), &Request{
+		Blobs: testRequest().Blobs,
+		Options: &TxConfig{
+			GasPrice:      0.002,
+			IsGasPriceSet: true,
+			MaxGasPrice:   0.001,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "exceeds the max gas price") {
+		t.Fatalf("expected max gas price error, got: %v", err)
+	}
+	if client.broadcastCalls != 0 {
+		t.Fatalf("broadcast calls = %d, want 0", client.broadcastCalls)
+	}
+}
+
 func TestDirectSubmitterConfirmationTimeout(t *testing.T) {
 	t.Parallel()
 

@@ -42,6 +42,8 @@ data_source:
 
   # Celestia-app Cosmos SDK gRPC endpoint (required when type: "app")
   # celestia_app_grpc_addr: "localhost:9090"
+  # Set true only when a non-loopback celestia-app endpoint is intentionally plaintext.
+  # celestia_app_grpc_insecure: false
 
   # Backfill source in app mode: "rpc" (default) or "db" (direct blockstore read)
   backfill_source: "rpc"
@@ -64,13 +66,16 @@ submission:
   enabled: false
   # Cosmos SDK gRPC endpoint for celestia-app submission.
   app_grpc_addr: ""
+  # Set true only when a non-loopback celestia-app endpoint is intentionally plaintext.
+  app_grpc_insecure: false
   # Chain ID that will be used when signing transactions.
   chain_id: ""
   # Path to a file containing the hex-encoded secp256k1 signing key.
   signer_key: "/path/to/apex-submission.key"
   # Default gas price to pay per unit when the request does not override it.
+  # Zero means "unset"; submission requests must then provide gas_price explicitly.
   gas_price: 0
-  # Maximum gas price that can be spent for a submission.
+  # Maximum gas price that can be spent for a submission. Zero disables the cap.
   max_gas_price: 0
   # Seconds to wait for transaction confirmation before timing out.
   confirmation_timeout: 30
@@ -157,18 +162,25 @@ func Load(path string) (*Config, error) {
 	if token := os.Getenv("APEX_AUTH_TOKEN"); token != "" {
 		cfg.DataSource.AuthToken = token
 	}
-	if err := resolveSubmissionSignerKeyPath(&cfg.Submission, filepath.Dir(path)); err != nil {
-		return nil, fmt.Errorf("resolving submission signer key path: %w", err)
-	}
-
 	if err := validate(&cfg); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
+	}
+	if err := resolveSubmissionSignerKeyPath(&cfg.Submission, filepath.Dir(path)); err != nil {
+		return nil, fmt.Errorf("resolving submission signer key path: %w", err)
 	}
 
 	return &cfg, nil
 }
 
 func validateDataSource(ds *DataSourceConfig) error {
+	ds.Type = strings.TrimSpace(ds.Type)
+	ds.CelestiaNodeURL = strings.TrimSpace(ds.CelestiaNodeURL)
+	ds.CelestiaAppGRPCAddr = strings.TrimSpace(ds.CelestiaAppGRPCAddr)
+	ds.BackfillSource = strings.TrimSpace(ds.BackfillSource)
+	ds.CelestiaAppDBPath = strings.TrimSpace(ds.CelestiaAppDBPath)
+	ds.CelestiaAppDBBackend = strings.TrimSpace(ds.CelestiaAppDBBackend)
+	ds.CelestiaAppDBLayout = strings.TrimSpace(ds.CelestiaAppDBLayout)
+
 	switch ds.Type {
 	case "node", "":
 		if ds.CelestiaNodeURL == "" {
@@ -342,6 +354,9 @@ func validateSubmission(s *SubmissionConfig) error {
 	if !s.Enabled {
 		return nil
 	}
+	s.CelestiaAppGRPCAddr = strings.TrimSpace(s.CelestiaAppGRPCAddr)
+	s.ChainID = strings.TrimSpace(s.ChainID)
+	s.SignerKey = strings.TrimSpace(s.SignerKey)
 	if s.CelestiaAppGRPCAddr == "" {
 		return errors.New("submission.app_grpc_addr is required when submission.enabled is true")
 	}
@@ -371,6 +386,7 @@ func resolveSubmissionSignerKeyPath(s *SubmissionConfig, baseDir string) error {
 		return nil
 	}
 	keyPath := strings.TrimSpace(s.SignerKey)
+	s.SignerKey = keyPath
 	if keyPath == "" {
 		return nil
 	}

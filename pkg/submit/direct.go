@@ -207,27 +207,21 @@ func (s *DirectSubmitter) buildBlobTx(req *Request, account *AccountInfo) ([]byt
 }
 
 func (s *DirectSubmitter) resolveFees(blobs []Blob, opts *TxConfig, sequence uint64) (uint64, float64, error) {
-	if opts != nil {
-		if opts.KeyName != "" {
-			return 0, 0, errors.New("submission tx option key_name is not supported by the direct submitter")
-		}
-		if opts.TxPriority != 0 {
-			return 0, 0, errors.New("submission tx option tx_priority is not supported by the direct submitter")
-		}
-		if opts.SignerAddress != "" && opts.SignerAddress != s.signer.Address() {
-			return 0, 0, fmt.Errorf("submission signer_address %q does not match configured signer %q", opts.SignerAddress, s.signer.Address())
-		}
+	if err := s.validateOptions(opts); err != nil {
+		return 0, 0, err
 	}
 
-	gasPrice := s.gasPrice
-	if opts != nil && (opts.IsGasPriceSet || opts.GasPrice > 0) {
-		gasPrice = opts.GasPrice
+	gasPrice, err := resolveGasPrice(s.gasPrice, opts)
+	if err != nil {
+		return 0, 0, err
 	}
-	if gasPrice <= 0 {
-		return 0, 0, errors.New("submission gas price must be configured or provided per request")
+
+	effectiveMaxGasPrice, err := resolveMaxGasPrice(s.maxGasPrice, opts)
+	if err != nil {
+		return 0, 0, err
 	}
-	if s.maxGasPrice > 0 && gasPrice > s.maxGasPrice {
-		return 0, 0, fmt.Errorf("submission gas price %.6f exceeds configured max %.6f", gasPrice, s.maxGasPrice)
+	if effectiveMaxGasPrice > 0 && gasPrice > effectiveMaxGasPrice {
+		return 0, 0, fmt.Errorf("submission gas price %.6f exceeds the max gas price %.6f", gasPrice, effectiveMaxGasPrice)
 	}
 
 	if opts != nil && opts.Gas > 0 {
@@ -239,6 +233,47 @@ func (s *DirectSubmitter) resolveFees(blobs []Blob, opts *TxConfig, sequence uin
 		return 0, 0, err
 	}
 	return gasLimit, gasPrice, nil
+}
+
+func (s *DirectSubmitter) validateOptions(opts *TxConfig) error {
+	if opts == nil {
+		return nil
+	}
+	if opts.KeyName != "" {
+		return errors.New("submission tx option key_name is not supported by the direct submitter")
+	}
+	if opts.TxPriority != 0 {
+		return errors.New("submission tx option tx_priority is not supported by the direct submitter")
+	}
+	if opts.SignerAddress != "" && opts.SignerAddress != s.signer.Address() {
+		return fmt.Errorf("submission signer_address %q does not match configured signer %q", opts.SignerAddress, s.signer.Address())
+	}
+	return nil
+}
+
+func resolveGasPrice(defaultGasPrice float64, opts *TxConfig) (float64, error) {
+	gasPrice := defaultGasPrice
+	if opts != nil && (opts.IsGasPriceSet || opts.GasPrice > 0) {
+		gasPrice = opts.GasPrice
+	}
+	if gasPrice <= 0 {
+		return 0, errors.New("submission gas price must be configured or provided per request")
+	}
+	return gasPrice, nil
+}
+
+func resolveMaxGasPrice(defaultMaxGasPrice float64, opts *TxConfig) (float64, error) {
+	effectiveMaxGasPrice := defaultMaxGasPrice
+	if opts == nil {
+		return effectiveMaxGasPrice, nil
+	}
+	if opts.MaxGasPrice < 0 {
+		return 0, errors.New("submission tx option max_gas_price must be non-negative")
+	}
+	if opts.MaxGasPrice > 0 && (effectiveMaxGasPrice == 0 || opts.MaxGasPrice < effectiveMaxGasPrice) {
+		effectiveMaxGasPrice = opts.MaxGasPrice
+	}
+	return effectiveMaxGasPrice, nil
 }
 
 func feeGranter(opts *TxConfig) string {

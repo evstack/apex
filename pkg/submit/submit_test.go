@@ -115,6 +115,72 @@ func TestDecodeRequestAcceptsShareVersionOneSigner(t *testing.T) {
 	}
 }
 
+func TestDecodeRequestTreatsWhitespaceNullOptionsAsNil(t *testing.T) {
+	t.Parallel()
+
+	ns := testNamespace(7)
+	blobsRaw, err := json.Marshal([]map[string]any{{
+		"namespace":     ns[:],
+		"data":          []byte("hello"),
+		"share_version": 0,
+		"commitment":    []byte("c1"),
+		"index":         0,
+	}})
+	if err != nil {
+		t.Fatalf("marshal blobs: %v", err)
+	}
+
+	req, err := DecodeRequest(blobsRaw, json.RawMessage(" \n null \t "))
+	if err != nil {
+		t.Fatalf("DecodeRequest: %v", err)
+	}
+	if req.Options != nil {
+		t.Fatalf("options = %#v, want nil", req.Options)
+	}
+}
+
+func TestDecodeRequestRejectsNegativeMaxGasPrice(t *testing.T) {
+	t.Parallel()
+
+	ns := testNamespace(7)
+	blobsRaw, err := json.Marshal([]map[string]any{{
+		"namespace":     ns[:],
+		"data":          []byte("hello"),
+		"share_version": 0,
+		"commitment":    []byte("c1"),
+		"index":         0,
+	}})
+	if err != nil {
+		t.Fatalf("marshal blobs: %v", err)
+	}
+
+	_, err = DecodeRequest(blobsRaw, json.RawMessage(`{"max_gas_price":-1}`))
+	if err == nil {
+		t.Fatal("expected error for negative max_gas_price")
+	}
+}
+
+func TestDecodeRequestRejectsInvalidPriority(t *testing.T) {
+	t.Parallel()
+
+	ns := testNamespace(7)
+	blobsRaw, err := json.Marshal([]map[string]any{{
+		"namespace":     ns[:],
+		"data":          []byte("hello"),
+		"share_version": 0,
+		"commitment":    []byte("c1"),
+		"index":         0,
+	}})
+	if err != nil {
+		t.Fatalf("marshal blobs: %v", err)
+	}
+
+	_, err = DecodeRequest(blobsRaw, json.RawMessage(`{"tx_priority":99}`))
+	if err == nil {
+		t.Fatal("expected error for invalid tx_priority")
+	}
+}
+
 func TestMarshalResultRejectsNil(t *testing.T) {
 	t.Parallel()
 

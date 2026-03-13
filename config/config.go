@@ -23,15 +23,16 @@ type Config struct {
 // Type selects the backend: "node" (default) uses a Celestia DA node,
 // "app" uses a celestia-app consensus node via Cosmos SDK gRPC.
 type DataSourceConfig struct {
-	Type                 string   `yaml:"type"` // "node" (default) or "app"
-	CelestiaNodeURL      string   `yaml:"celestia_node_url"`
-	CelestiaAppGRPCAddr  string   `yaml:"celestia_app_grpc_addr"`
-	BackfillSource       string   `yaml:"backfill_source"`         // "rpc" (default) or "db" for app mode
-	CelestiaAppDBPath    string   `yaml:"celestia_app_db_path"`    // required when backfill_source=db
-	CelestiaAppDBBackend string   `yaml:"celestia_app_db_backend"` // auto|pebble|leveldb
-	CelestiaAppDBLayout  string   `yaml:"celestia_app_db_layout"`  // auto|v1|v2
-	AuthToken            string   `yaml:"-"`                       //nolint:gosec // populated only via APEX_AUTH_TOKEN env var; not a hardcoded credential
-	Namespaces           []string `yaml:"namespaces"`
+	Type                    string   `yaml:"type"` // "node" (default) or "app"
+	CelestiaNodeURL         string   `yaml:"celestia_node_url"`
+	CelestiaAppGRPCAddr     string   `yaml:"celestia_app_grpc_addr"`
+	CelestiaAppGRPCInsecure bool     `yaml:"celestia_app_grpc_insecure"` // allow plaintext gRPC to non-loopback celestia-app endpoints
+	BackfillSource          string   `yaml:"backfill_source"`            // "rpc" (default) or "db" for app mode
+	CelestiaAppDBPath       string   `yaml:"celestia_app_db_path"`       // required when backfill_source=db
+	CelestiaAppDBBackend    string   `yaml:"celestia_app_db_backend"`    // auto|pebble|leveldb
+	CelestiaAppDBLayout     string   `yaml:"celestia_app_db_layout"`     // auto|v1|v2
+	AuthToken               string   `yaml:"-"`                          //nolint:gosec // populated only via APEX_AUTH_TOKEN env var; not a hardcoded credential
+	Namespaces              []string `yaml:"namespaces"`
 }
 
 // StorageConfig configures the persistence backend.
@@ -95,13 +96,14 @@ type LogConfig struct {
 
 // SubmissionConfig contains settings for the future blob submission pipeline.
 type SubmissionConfig struct {
-	Enabled             bool    `yaml:"enabled"`
-	CelestiaAppGRPCAddr string  `yaml:"app_grpc_addr"`
-	ChainID             string  `yaml:"chain_id"`
-	SignerKey           string  `yaml:"signer_key"` // path to a file containing the hex-encoded secp256k1 key
-	GasPrice            float64 `yaml:"gas_price"`
-	MaxGasPrice         float64 `yaml:"max_gas_price"`
-	ConfirmationTimeout int     `yaml:"confirmation_timeout"` // seconds
+	Enabled                 bool    `yaml:"enabled"`
+	CelestiaAppGRPCAddr     string  `yaml:"app_grpc_addr"`
+	CelestiaAppGRPCInsecure bool    `yaml:"app_grpc_insecure"` // allow plaintext gRPC to non-loopback celestia-app endpoints
+	ChainID                 string  `yaml:"chain_id"`
+	SignerKey               string  `yaml:"signer_key"`           // path to a file containing the hex-encoded secp256k1 key
+	GasPrice                float64 `yaml:"gas_price"`            // 0 means unset; callers must provide gas_price per request
+	MaxGasPrice             float64 `yaml:"max_gas_price"`        // 0 disables the max gas price cap
+	ConfirmationTimeout     int     `yaml:"confirmation_timeout"` // seconds
 }
 
 // DefaultConfig returns a Config with sensible defaults.

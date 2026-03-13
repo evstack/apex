@@ -182,12 +182,34 @@ submission:
 			wantError: "submission.app_grpc_addr is required",
 		},
 		{
+			name: "whitespace app_grpc_addr",
+			yaml: `
+submission:
+  enabled: true
+  app_grpc_addr: "   "
+  chain_id: "mychain"
+  signer_key: "signer.key"
+`,
+			wantError: "submission.app_grpc_addr is required",
+		},
+		{
 			name: "missing chain_id",
 			yaml: `
 submission:
   enabled: true
   app_grpc_addr: "localhost:9090"
   chain_id: ""
+`,
+			wantError: "submission.chain_id is required",
+		},
+		{
+			name: "whitespace chain_id",
+			yaml: `
+submission:
+  enabled: true
+  app_grpc_addr: "localhost:9090"
+  chain_id: "   "
+  signer_key: "signer.key"
 `,
 			wantError: "submission.chain_id is required",
 		},
@@ -199,6 +221,17 @@ submission:
   app_grpc_addr: "localhost:9090"
   chain_id: "mychain"
   signer_key: ""
+`,
+			wantError: "submission.signer_key is required",
+		},
+		{
+			name: "whitespace signer_key",
+			yaml: `
+submission:
+  enabled: true
+  app_grpc_addr: "localhost:9090"
+  chain_id: "mychain"
+  signer_key: "   "
 `,
 			wantError: "submission.signer_key is required",
 		},
@@ -242,9 +275,9 @@ func TestSubmissionLoadsSignerKeyFromFile(t *testing.T) {
 	content := `
 submission:
   enabled: true
-  app_grpc_addr: "localhost:9090"
-  chain_id: "mychain"
-  signer_key: "submit.key"
+  app_grpc_addr: "  localhost:9090  "
+  chain_id: "  mychain  "
+  signer_key: "  submit.key  "
 
 log:
   level: "info"
@@ -260,6 +293,12 @@ log:
 	}
 	if cfg.Submission.SignerKey != keyPath {
 		t.Fatalf("signer key path = %q, want %q", cfg.Submission.SignerKey, keyPath)
+	}
+	if cfg.Submission.CelestiaAppGRPCAddr != "localhost:9090" {
+		t.Fatalf("app grpc addr = %q, want %q", cfg.Submission.CelestiaAppGRPCAddr, "localhost:9090")
+	}
+	if cfg.Submission.ChainID != "mychain" {
+		t.Fatalf("chain id = %q, want %q", cfg.Submission.ChainID, "mychain")
 	}
 }
 

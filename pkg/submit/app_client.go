@@ -6,8 +6,8 @@ import (
 
 	authv1beta1 "github.com/evstack/apex/pkg/api/grpc/gen/cosmos/auth/v1beta1"
 	txv1beta1 "github.com/evstack/apex/pkg/api/grpc/gen/cosmos/tx/v1beta1"
+	"github.com/evstack/apex/pkg/grpcutil"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // AccountInfo is the Apex-owned account view returned by celestia-app.
@@ -47,8 +47,11 @@ type GRPCAppClient struct {
 
 // NewGRPCAppClient opens a gRPC client for direct celestia-app submission
 // primitives.
-func NewGRPCAppClient(grpcAddr string) (*GRPCAppClient, error) {
-	conn, err := grpc.NewClient(grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func NewGRPCAppClient(grpcAddr string, allowInsecure bool) (*GRPCAppClient, error) {
+	conn, err := grpc.NewClient(
+		grpcAddr,
+		grpc.WithTransportCredentials(grpcutil.TransportCredentials(grpcAddr, allowInsecure)),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("create celestia-app submit client: %w", err)
 	}

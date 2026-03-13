@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +43,11 @@ type DirectSubmitter struct {
 	pollInterval        time.Duration
 	feeDenom            string
 	mu                  sync.Mutex
+	accountNumber       uint64
+	nextSequence        uint64
+	sequenceReady       bool
+	pendingSequences    map[string]uint64
+	maxInFlight         int
 }
 
 // NewDirectSubmitter builds a concrete single-account submitter.
@@ -87,29 +93,19 @@ func (s *DirectSubmitter) Close() error {
 	return s.app.Close()
 }
 
-// Submit serializes submissions for the configured signer so sequence handling
-// stays bounded and explicit in v1.
+// Submit serializes sequence reservation and broadcast for the configured
+// signer, then waits for confirmation without blocking the next nonce.
 func (s *DirectSubmitter) Submit(ctx context.Context, req *Request) (*Result, error) {
 	if err := validateSubmitRequest(req); err != nil {
 		return nil, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var lastErr error
-	for range maxSequenceRetryRounds {
-		result, err := s.submitOnce(ctx, req)
-		if err == nil {
-			return result, nil
-		}
-		lastErr = err
-		if !errors.Is(err, errSequenceMismatch) {
-			return nil, err
-		}
+	broadcast, err := s.broadcastTx(ctx, req)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, lastErr
+	return s.waitForConfirmation(ctx, broadcast.Hash)
 }
 
 func validateSubmitRequest(req *Request) error {
@@ -127,32 +123,86 @@ func validateSubmitRequest(req *Request) error {
 	return nil
 }
 
-func (s *DirectSubmitter) submitOnce(ctx context.Context, req *Request) (*Result, error) {
-	account, err := s.app.AccountInfo(ctx, s.signer.Address())
-	if err != nil {
-		return nil, fmt.Errorf("query submission account: %w", err)
-	}
-	if account == nil {
-		return nil, errors.New("query submission account: empty response")
-	}
+func (s *DirectSubmitter) broadcastTx(ctx context.Context, req *Request) (*TxStatus, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	txBytes, err := s.buildBlobTx(req, account)
-	if err != nil {
-		return nil, err
-	}
-
-	broadcast, err := s.app.BroadcastTx(ctx, txBytes)
-	if err != nil {
-		if isSequenceMismatchText(err.Error()) {
-			return nil, fmt.Errorf("%w: %w", errSequenceMismatch, err)
+	var lastErr error
+	for range maxSequenceRetryRounds {
+		account, err := s.nextAccountLocked(ctx)
+		if err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("broadcast blob tx: %w", err)
-	}
-	if err := checkTxStatus("broadcast", broadcast); err != nil {
-		return nil, err
+
+		txBytes, err := s.buildBlobTx(req, account)
+		if err != nil {
+			return nil, err
+		}
+
+		broadcast, err := s.app.BroadcastTx(ctx, txBytes)
+		if err != nil {
+			if isSequenceMismatchText(err.Error()) {
+				s.recoverSequenceLocked(account, err.Error())
+				lastErr = fmt.Errorf("%w: %w", errSequenceMismatch, err)
+				continue
+			}
+			return nil, fmt.Errorf("broadcast blob tx: %w", err)
+		}
+		if err := checkTxStatus("broadcast", broadcast); err != nil {
+			if errors.Is(err, errSequenceMismatch) {
+				s.recoverSequenceLocked(account, err.Error())
+				lastErr = err
+				continue
+			}
+			return nil, err
+		}
+
+		s.nextSequence = account.Sequence + 1
+		s.sequenceReady = true
+		return broadcast, nil
 	}
 
-	return s.waitForConfirmation(ctx, broadcast.Hash)
+	return nil, lastErr
+}
+
+func (s *DirectSubmitter) nextAccountLocked(ctx context.Context) (*AccountInfo, error) {
+	if !s.sequenceReady {
+		account, err := s.app.AccountInfo(ctx, s.signer.Address())
+		if err != nil {
+			return nil, fmt.Errorf("query submission account: %w", err)
+		}
+		if account == nil {
+			return nil, errors.New("query submission account: empty response")
+		}
+
+		s.accountNumber = account.AccountNumber
+		s.nextSequence = account.Sequence
+		s.sequenceReady = true
+	}
+
+	return &AccountInfo{
+		Address:       s.signer.Address(),
+		AccountNumber: s.accountNumber,
+		Sequence:      s.nextSequence,
+	}, nil
+}
+
+func (s *DirectSubmitter) invalidateSequenceLocked() {
+	s.accountNumber = 0
+	s.nextSequence = 0
+	s.sequenceReady = false
+}
+
+func (s *DirectSubmitter) recoverSequenceLocked(account *AccountInfo, errText string) {
+	expected, ok := expectedSequenceFromMismatchText(errText)
+	if !ok {
+		s.invalidateSequenceLocked()
+		return
+	}
+
+	s.accountNumber = account.AccountNumber
+	s.nextSequence = expected
+	s.sequenceReady = true
 }
 
 func (s *DirectSubmitter) buildBlobTx(req *Request, account *AccountInfo) ([]byte, error) {
@@ -337,6 +387,29 @@ func checkTxStatus(stage string, tx *TxStatus) error {
 func isSequenceMismatchText(text string) bool {
 	text = strings.ToLower(text)
 	return strings.Contains(text, "account sequence mismatch") || strings.Contains(text, "incorrect account sequence")
+}
+
+func expectedSequenceFromMismatchText(text string) (uint64, bool) {
+	lower := strings.ToLower(text)
+	idx := strings.Index(lower, "expected ")
+	if idx < 0 {
+		return 0, false
+	}
+
+	start := idx + len("expected ")
+	end := start
+	for end < len(text) && text[end] >= '0' && text[end] <= '9' {
+		end++
+	}
+	if end == start {
+		return 0, false
+	}
+
+	sequence, err := strconv.ParseUint(text[start:end], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return sequence, true
 }
 
 func isTxNotFound(err error) bool {

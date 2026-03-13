@@ -33,6 +33,7 @@ type blobAPI struct {
 	GetAll   func(ctx context.Context, height uint64, namespaces [][]byte) (json.RawMessage, error)
 	GetProof func(ctx context.Context, height uint64, namespace []byte, commitment []byte) (json.RawMessage, error)
 	Included func(ctx context.Context, height uint64, namespace []byte, proof json.RawMessage, commitment []byte) (bool, error)
+	Submit   func(ctx context.Context, namespace []byte, data []byte, shareVersion int) (json.RawMessage, error)
 }
 
 // CelestiaNodeFetcher implements DataFetcher using a Celestia node's JSON-RPC API.
@@ -340,6 +341,17 @@ func (f *CelestiaNodeFetcher) Included(ctx context.Context, height uint64, names
 	return ok, nil
 }
 
+// SubmitBlob submits a blob to Celestia and returns the resulting blob with height and commitment.
+func (f *CelestiaNodeFetcher) SubmitBlob(ctx context.Context, namespace types.Namespace, data []byte) (*types.Blob, error) {
+	raw, err := f.callRawWithRetry(ctx, "blob.Submit", func(callCtx context.Context) (json.RawMessage, error) {
+		return f.blob.Submit(callCtx, namespace[:], data, 0)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("blob.Submit: %w", err)
+	}
+	return mapSubmitResult(raw, namespace, data)
+}
+
 func (f *CelestiaNodeFetcher) Close() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -473,6 +485,29 @@ func mapBlobs(raw json.RawMessage, height uint64) ([]types.Blob, error) {
 		}
 	}
 	return blobs, nil
+}
+
+// rpcSubmitResult is the JSON response from blob.Submit.
+type rpcSubmitResult struct {
+	Height       uint64 `json:"height"`
+	Commitment   []byte `json:"commitment"`
+	ShareVersion uint32 `json:"share_version"`
+	Index        int    `json:"index"`
+}
+
+func mapSubmitResult(raw json.RawMessage, namespace types.Namespace, data []byte) (*types.Blob, error) {
+	var result rpcSubmitResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("unmarshal submit result: %w", err)
+	}
+	return &types.Blob{
+		Height:       result.Height,
+		Namespace:    namespace,
+		Data:         data,
+		Commitment:   result.Commitment,
+		ShareVersion: result.ShareVersion,
+		Index:        result.Index,
+	}, nil
 }
 
 func namespacesToBytes(nss []types.Namespace) [][]byte {

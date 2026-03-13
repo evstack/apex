@@ -102,6 +102,7 @@ type migrationStep struct {
 var allMigrations = []migrationStep{
 	{version: 1, file: "migrations/001_init.sql"},
 	{version: 2, file: "migrations/002_commitment_index.sql"},
+	{version: 3, file: "migrations/003_s3_objects.sql"},
 }
 
 func (s *SQLiteStore) migrate() error {

@@ -24,6 +24,7 @@ import (
 	"github.com/evstack/apex/pkg/fetch"
 	"github.com/evstack/apex/pkg/metrics"
 	"github.com/evstack/apex/pkg/profile"
+	"github.com/evstack/apex/pkg/s3"
 	"github.com/evstack/apex/pkg/store"
 	syncer "github.com/evstack/apex/pkg/sync"
 	"github.com/evstack/apex/pkg/types"
@@ -207,6 +208,40 @@ func setStoreMetrics(db store.Store, rec metrics.Recorder) {
 	}
 }
 
+func setupS3Server(cfg *config.Config, db *store.SQLiteStore, log zerolog.Logger) (*http.Server, error) {
+	if !cfg.S3.Enabled {
+		return nil, nil
+	}
+
+	var ns types.Namespace
+	if cfg.S3.Namespace != "" {
+		var err error
+		ns, err = types.NamespaceFromHex(cfg.S3.Namespace)
+		if err != nil {
+			return nil, fmt.Errorf("parse S3 namespace: %w", err)
+		}
+	}
+
+	objStore := store.NewObjectStore(db, ns)
+	s3Svc := s3.NewService(objStore, nil, ns)
+	s3Srv := s3.NewServer(s3Svc, cfg.S3.Region, log)
+
+	httpSrv := &http.Server{
+		Addr:              cfg.S3.ListenAddr,
+		Handler:           s3Srv,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	go func() {
+		log.Info().Str("addr", cfg.S3.ListenAddr).Msg("S3 API server listening")
+		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error().Err(err).Msg("S3 API server error")
+		}
+	}()
+
+	return httpSrv, nil
+}
+
 func persistNamespaces(ctx context.Context, db store.Store, namespaces []types.Namespace) error {
 	for _, ns := range namespaces {
 		if err := db.PutNamespace(ctx, ns); err != nil {
@@ -259,6 +294,15 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 
 	// Wire metrics into the store.
 	setStoreMetrics(db, rec)
+
+	// Setup S3 API server if enabled.
+	var s3Srv *http.Server
+	if sqliteDB, ok := db.(*store.SQLiteStore); ok {
+		s3Srv, err = setupS3Server(cfg, sqliteDB, log.Logger)
+		if err != nil {
+			return fmt.Errorf("setup S3 server: %w", err)
+		}
+	}
 
 	// Persist configured namespaces.
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
@@ -350,7 +394,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 
 	err = coord.Run(ctx)
 
-	gracefulShutdown(httpSrv, grpcSrv, metricsSrv, profileSrv)
+	gracefulShutdown(httpSrv, grpcSrv, metricsSrv, profileSrv, s3Srv)
 
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return fmt.Errorf("coordinator: %w", err)
@@ -360,7 +404,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *metrics.Server, profileSrv *profile.Server) {
+func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *metrics.Server, profileSrv *profile.Server, s3Srv *http.Server) {
 	stopped := make(chan struct{})
 	go func() {
 		grpcSrv.GracefulStop()
@@ -379,6 +423,12 @@ func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *me
 	defer shutdownCancel()
 	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("JSON-RPC server shutdown error")
+	}
+
+	if s3Srv != nil {
+		if err := s3Srv.Shutdown(shutdownCtx); err != nil {
+			log.Error().Err(err).Msg("S3 API server shutdown error")
+		}
 	}
 
 	if metricsSrv != nil {

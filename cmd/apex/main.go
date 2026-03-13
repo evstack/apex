@@ -357,7 +357,7 @@ func openBlobSubmitter(cfg *config.Config) (*submit.DirectSubmitter, error) {
 		return nil, fmt.Errorf("create submission app client: %w", err)
 	}
 
-	signer, err := submit.LoadSigner(cfg.Submission.SignerPrivateKey)
+	signer, err := submit.LoadSigner(cfg.Submission.SignerKey)
 	if err != nil {
 		_ = appClient.Close()
 		return nil, fmt.Errorf("load submission signer: %w", err)

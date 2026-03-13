@@ -223,7 +223,7 @@ func TestDirectSubmitterConfirmationTimeout(t *testing.T) {
 func mustSigner(t *testing.T) *Signer {
 	t.Helper()
 
-	signer, err := LoadSigner("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20")
+	signer, err := LoadSigner(writeSignerKey(t, testSignerKeyHex))
 	if err != nil {
 		t.Fatalf("LoadSigner: %v", err)
 	}

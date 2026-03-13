@@ -11,8 +11,9 @@ import (
 func TestParseBlobTxFromSubmitMarshaller(t *testing.T) {
 	t.Parallel()
 
+	namespace := testNamespaceType(3)
 	blob := submit.Blob{
-		Namespace:    testNamespaceType(3),
+		Namespace:    namespace,
 		Data:         []byte("payload"),
 		ShareVersion: 1,
 		Commitment:   []byte("commitment"),
@@ -46,8 +47,14 @@ func TestParseBlobTxFromSubmitMarshaller(t *testing.T) {
 	if len(parsed.Blobs) != 1 {
 		t.Fatalf("got %d blobs, want 1", len(parsed.Blobs))
 	}
+	if ns, ok := namespaceFromRawBlob(parsed.Blobs[0]); !ok || ns != namespace {
+		t.Fatalf("namespace = %x, want %x", ns, namespace)
+	}
 	if string(parsed.Blobs[0].Data) != "payload" {
 		t.Fatalf("data = %q", parsed.Blobs[0].Data)
+	}
+	if parsed.Blobs[0].ShareVersion != 1 {
+		t.Fatalf("share version = %d, want 1", parsed.Blobs[0].ShareVersion)
 	}
 	if string(parsed.PFB.Signer) != "celestia1submitter" {
 		t.Fatalf("signer = %q", parsed.PFB.Signer)

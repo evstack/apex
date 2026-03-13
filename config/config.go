@@ -98,8 +98,7 @@ type SubmissionConfig struct {
 	Enabled             bool    `yaml:"enabled"`
 	CelestiaAppGRPCAddr string  `yaml:"app_grpc_addr"`
 	ChainID             string  `yaml:"chain_id"`
-	SignerKey           string  `yaml:"signer_key"`
-	SignerPrivateKey    string  `yaml:"-"`
+	SignerKey           string  `yaml:"signer_key"` // path to a file containing the hex-encoded secp256k1 key
 	GasPrice            float64 `yaml:"gas_price"`
 	MaxGasPrice         float64 `yaml:"max_gas_price"`
 	ConfirmationTimeout int     `yaml:"confirmation_timeout"` // seconds

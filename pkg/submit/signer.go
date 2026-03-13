@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -24,10 +25,20 @@ type Signer struct {
 	publicKey  []byte
 }
 
-// LoadSigner parses a hex-encoded secp256k1 private key and derives the
-// corresponding Cosmos-style address and compressed public key.
-func LoadSigner(privateKeyHex string) (*Signer, error) {
-	privKeyBytes, err := decodePrivateKeyHex(privateKeyHex)
+// LoadSigner reads a file containing a hex-encoded secp256k1 private key and
+// derives the corresponding Cosmos-style address and compressed public key.
+func LoadSigner(keyPath string) (*Signer, error) {
+	keyPath = strings.TrimSpace(keyPath)
+	if keyPath == "" {
+		return nil, errors.New("submission signer key path is required")
+	}
+
+	keyBytes, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("read submission signer key %q: %w", keyPath, err)
+	}
+
+	privKeyBytes, err := decodePrivateKeyHex(string(keyBytes))
 	if err != nil {
 		return nil, err
 	}

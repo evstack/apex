@@ -129,9 +129,11 @@ func (f *mockFetcher) Close() error { return nil }
 type mockSubmitter struct {
 	result *submit.Result
 	err    error
+	last   *submit.Request
 }
 
-func (m *mockSubmitter) Submit(_ context.Context, _ *submit.Request) (*submit.Result, error) {
+func (m *mockSubmitter) Submit(_ context.Context, req *submit.Request) (*submit.Result, error) {
+	m.last = req
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -396,13 +398,14 @@ func TestJSONRPCBlobSubmitReadOnlyByDefault(t *testing.T) {
 
 func TestJSONRPCBlobSubmitDelegates(t *testing.T) {
 	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
+	submitter := &mockSubmitter{result: &submit.Result{Height: 77}}
 	svc := api.NewService(
 		newMockStore(),
 		&mockFetcher{},
 		nil,
 		notifier,
 		zerolog.Nop(),
-		api.WithBlobSubmitter(&mockSubmitter{result: &submit.Result{Height: 77}}),
+		api.WithBlobSubmitter(submitter),
 	)
 	srv := NewServer(svc, zerolog.Nop())
 
@@ -425,5 +428,20 @@ func TestJSONRPCBlobSubmitDelegates(t *testing.T) {
 	}
 	if string(resp.Result) != "77" {
 		t.Fatalf("result = %s, want 77", resp.Result)
+	}
+	if submitter.last == nil {
+		t.Fatal("submitter request = nil")
+	}
+	if len(submitter.last.Blobs) != 1 {
+		t.Fatalf("blob count = %d, want 1", len(submitter.last.Blobs))
+	}
+	if submitter.last.Blobs[0].Namespace != ns {
+		t.Fatalf("namespace = %x, want %x", submitter.last.Blobs[0].Namespace, ns)
+	}
+	if string(submitter.last.Blobs[0].Data) != "hello" {
+		t.Fatalf("data = %q, want %q", submitter.last.Blobs[0].Data, "hello")
+	}
+	if submitter.last.Options == nil || submitter.last.Options.TxPriority != submit.PriorityHigh {
+		t.Fatalf("options = %#v, want high priority", submitter.last.Options)
 	}
 }

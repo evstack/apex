@@ -1,6 +1,7 @@
 package submit
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"testing"
@@ -17,33 +18,64 @@ const bufSize = 1024 * 1024
 
 type authServer struct {
 	authv1beta1.UnimplementedQueryServer
-	info *authv1beta1.QueryAccountInfoResponse
+	info        *authv1beta1.QueryAccountInfoResponse
+	lastAddress string
 }
 
-func (s *authServer) AccountInfo(context.Context, *authv1beta1.QueryAccountInfoRequest) (*authv1beta1.QueryAccountInfoResponse, error) {
+func (s *authServer) AccountInfo(_ context.Context, req *authv1beta1.QueryAccountInfoRequest) (*authv1beta1.QueryAccountInfoResponse, error) {
+	s.lastAddress = req.GetAddress()
 	return s.info, nil
 }
 
 type txServer struct {
 	txv1beta1.UnimplementedServiceServer
-	broadcast *txv1beta1.BroadcastTxResponse
-	getTx     *txv1beta1.GetTxResponse
+	broadcast        *txv1beta1.BroadcastTxResponse
+	getTx            *txv1beta1.GetTxResponse
+	lastBroadcastReq *txv1beta1.BroadcastTxRequest
+	lastGetTxHash    string
 }
 
-func (s *txServer) BroadcastTx(context.Context, *txv1beta1.BroadcastTxRequest) (*txv1beta1.BroadcastTxResponse, error) {
+func (s *txServer) BroadcastTx(_ context.Context, req *txv1beta1.BroadcastTxRequest) (*txv1beta1.BroadcastTxResponse, error) {
+	s.lastBroadcastReq = req
 	return s.broadcast, nil
 }
 
-func (s *txServer) GetTx(context.Context, *txv1beta1.GetTxRequest) (*txv1beta1.GetTxResponse, error) {
+func (s *txServer) GetTx(_ context.Context, req *txv1beta1.GetTxRequest) (*txv1beta1.GetTxResponse, error) {
+	s.lastGetTxHash = req.GetHash()
 	return s.getTx, nil
 }
 
 func TestGRPCAppClient(t *testing.T) {
 	t.Parallel()
 
+	client, authSrv, txSrv := newTestGRPCAppClient(t)
+	defer client.Close() //nolint:errcheck
+
+	info, err := client.AccountInfo(context.Background(), "celestia1test")
+	if err != nil {
+		t.Fatalf("AccountInfo: %v", err)
+	}
+	assertAccountInfoResponse(t, info, authSrv)
+
+	broadcast, err := client.BroadcastTx(context.Background(), []byte("tx"))
+	if err != nil {
+		t.Fatalf("BroadcastTx: %v", err)
+	}
+	assertBroadcastResponse(t, broadcast, txSrv)
+
+	queried, err := client.GetTx(context.Background(), "ABC")
+	if err != nil {
+		t.Fatalf("GetTx: %v", err)
+	}
+	assertGetTxResponse(t, queried, txSrv)
+}
+
+func newTestGRPCAppClient(t *testing.T) (*GRPCAppClient, *authServer, *txServer) {
+	t.Helper()
+
 	lis := bufconn.Listen(bufSize)
 	srv := grpc.NewServer()
-	authv1beta1.RegisterQueryServer(srv, &authServer{
+	authSrv := &authServer{
 		info: &authv1beta1.QueryAccountInfoResponse{
 			Info: &authv1beta1.BaseAccount{
 				Address:       "celestia1test",
@@ -51,8 +83,8 @@ func TestGRPCAppClient(t *testing.T) {
 				Sequence:      11,
 			},
 		},
-	})
-	txv1beta1.RegisterServiceServer(srv, &txServer{
+	}
+	txSrv := &txServer{
 		broadcast: &txv1beta1.BroadcastTxResponse{
 			TxResponse: &abciv1beta1.TxResponse{
 				Height:    101,
@@ -73,11 +105,13 @@ func TestGRPCAppClient(t *testing.T) {
 				GasUsed:   190,
 			},
 		},
-	})
+	}
+	authv1beta1.RegisterQueryServer(srv, authSrv)
+	txv1beta1.RegisterServiceServer(srv, txSrv)
 	go func() {
 		_ = srv.Serve(lis)
 	}()
-	defer srv.Stop()
+	t.Cleanup(srv.Stop)
 
 	conn, err := grpc.NewClient("passthrough:///bufconn",
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
@@ -88,34 +122,48 @@ func TestGRPCAppClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("grpc.NewClient: %v", err)
 	}
-	client := &GRPCAppClient{
+	return &GRPCAppClient{
 		conn: conn,
 		auth: authv1beta1.NewQueryClient(conn),
 		tx:   txv1beta1.NewServiceClient(conn),
-	}
-	defer client.Close() //nolint:errcheck
+	}, authSrv, txSrv
+}
 
-	info, err := client.AccountInfo(context.Background(), "celestia1test")
-	if err != nil {
-		t.Fatalf("AccountInfo: %v", err)
-	}
+func assertAccountInfoResponse(t *testing.T, info *AccountInfo, authSrv *authServer) {
+	t.Helper()
+
 	if info.AccountNumber != 7 || info.Sequence != 11 {
 		t.Fatalf("info = %#v", info)
 	}
-
-	broadcast, err := client.BroadcastTx(context.Background(), []byte("tx"))
-	if err != nil {
-		t.Fatalf("BroadcastTx: %v", err)
+	if authSrv.lastAddress != "celestia1test" {
+		t.Fatalf("account lookup address = %q, want %q", authSrv.lastAddress, "celestia1test")
 	}
+}
+
+func assertBroadcastResponse(t *testing.T, broadcast *TxStatus, txSrv *txServer) {
+	t.Helper()
+
 	if broadcast.Hash != "ABC" || broadcast.Height != 101 {
 		t.Fatalf("broadcast = %#v", broadcast)
 	}
-
-	queried, err := client.GetTx(context.Background(), "ABC")
-	if err != nil {
-		t.Fatalf("GetTx: %v", err)
+	if txSrv.lastBroadcastReq == nil {
+		t.Fatal("broadcast request = nil")
 	}
+	if !bytes.Equal(txSrv.lastBroadcastReq.GetTxBytes(), []byte("tx")) {
+		t.Fatalf("broadcast tx bytes = %x, want %x", txSrv.lastBroadcastReq.GetTxBytes(), []byte("tx"))
+	}
+	if txSrv.lastBroadcastReq.GetMode() != txv1beta1.BroadcastMode_BROADCAST_MODE_SYNC {
+		t.Fatalf("broadcast mode = %v, want %v", txSrv.lastBroadcastReq.GetMode(), txv1beta1.BroadcastMode_BROADCAST_MODE_SYNC)
+	}
+}
+
+func assertGetTxResponse(t *testing.T, queried *TxStatus, txSrv *txServer) {
+	t.Helper()
+
 	if queried.Hash != "DEF" || queried.Code != 3 {
 		t.Fatalf("queried = %#v", queried)
+	}
+	if txSrv.lastGetTxHash != "ABC" {
+		t.Fatalf("GetTx hash = %q, want %q", txSrv.lastGetTxHash, "ABC")
 	}
 }

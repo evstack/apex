@@ -7,6 +7,8 @@ import (
 	"github.com/evstack/apex/pkg/types"
 )
 
+const testSignerAddress = "celestia1test"
+
 func TestDecodeRequest(t *testing.T) {
 	ns := testNamespace(7)
 	blobsRaw, err := json.Marshal([]map[string]any{{
@@ -36,24 +38,8 @@ func TestDecodeRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeRequest: %v", err)
 	}
-	if len(req.Blobs) != 1 {
-		t.Fatalf("got %d blobs, want 1", len(req.Blobs))
-	}
-	if req.Blobs[0].Namespace != ns {
-		t.Fatalf("namespace = %x, want %x", req.Blobs[0].Namespace, ns)
-	}
-	if req.Blobs[0].ShareVersion != 1 {
-		t.Fatalf("share version = %d, want 1", req.Blobs[0].ShareVersion)
-	}
-	if req.Options == nil {
-		t.Fatal("options = nil, want decoded options")
-	}
-	if req.Options.TxPriority != PriorityHigh {
-		t.Fatalf("priority = %d, want %d", req.Options.TxPriority, PriorityHigh)
-	}
-	if req.Options.SignerAddress != "celestia1test" {
-		t.Fatalf("signer address = %q, want %q", req.Options.SignerAddress, "celestia1test")
-	}
+	assertDecodedBlob(t, req, ns)
+	assertDecodedOptions(t, req.Options)
 }
 
 func TestDecodeRequestNilOptions(t *testing.T) {
@@ -97,8 +83,60 @@ func TestMarshalResult(t *testing.T) {
 	}
 }
 
+func TestMarshalResultRejectsNil(t *testing.T) {
+	if _, err := MarshalResult(nil); err == nil {
+		t.Fatal("expected error for nil result")
+	}
+}
+
 func testNamespace(b byte) types.Namespace {
 	var ns types.Namespace
 	ns[types.NamespaceSize-1] = b
 	return ns
+}
+
+func assertDecodedBlob(t *testing.T, req *Request, wantNamespace types.Namespace) {
+	t.Helper()
+
+	if len(req.Blobs) != 1 {
+		t.Fatalf("got %d blobs, want 1", len(req.Blobs))
+	}
+	if req.Blobs[0].Namespace != wantNamespace {
+		t.Fatalf("namespace = %x, want %x", req.Blobs[0].Namespace, wantNamespace)
+	}
+	if string(req.Blobs[0].Data) != "hello" {
+		t.Fatalf("data = %q, want %q", req.Blobs[0].Data, "hello")
+	}
+	if req.Blobs[0].ShareVersion != 1 {
+		t.Fatalf("share version = %d, want 1", req.Blobs[0].ShareVersion)
+	}
+	if string(req.Blobs[0].Commitment) != "commitment" {
+		t.Fatalf("commitment = %q, want %q", req.Blobs[0].Commitment, "commitment")
+	}
+	if string(req.Blobs[0].Signer) != "signer" {
+		t.Fatalf("signer = %q, want %q", req.Blobs[0].Signer, "signer")
+	}
+	if req.Blobs[0].Index != -1 {
+		t.Fatalf("index = %d, want -1", req.Blobs[0].Index)
+	}
+}
+
+func assertDecodedOptions(t *testing.T, opts *TxConfig) {
+	t.Helper()
+
+	if opts == nil {
+		t.Fatal("options = nil, want decoded options")
+	}
+	if opts.GasPrice != 0.25 || !opts.IsGasPriceSet {
+		t.Fatalf("gas config = %#v, want gas price override", opts)
+	}
+	if opts.MaxGasPrice != 1.5 || opts.Gas != 1234 {
+		t.Fatalf("gas bounds = %#v, want max gas price and explicit gas", opts)
+	}
+	if opts.TxPriority != PriorityHigh {
+		t.Fatalf("priority = %d, want %d", opts.TxPriority, PriorityHigh)
+	}
+	if opts.SignerAddress != testSignerAddress {
+		t.Fatalf("signer address = %q, want %q", opts.SignerAddress, testSignerAddress)
+	}
 }

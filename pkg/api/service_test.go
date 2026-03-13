@@ -392,7 +392,19 @@ func TestServiceBlobSubmitDelegates(t *testing.T) {
 	if submitter.last.Blobs[0].Namespace != ns {
 		t.Fatalf("namespace = %x, want %x", submitter.last.Blobs[0].Namespace, ns)
 	}
+	if string(submitter.last.Blobs[0].Data) != "hello" {
+		t.Fatalf("data = %q, want %q", submitter.last.Blobs[0].Data, "hello")
+	}
+	if string(submitter.last.Blobs[0].Commitment) != "c1" {
+		t.Fatalf("commitment = %q, want %q", submitter.last.Blobs[0].Commitment, "c1")
+	}
 	if submitter.last.Options == nil || submitter.last.Options.TxPriority != submit.PriorityHigh {
 		t.Fatalf("options = %#v, want high priority", submitter.last.Options)
+	}
+	if submitter.last.Options.GasPrice != 0.1 || !submitter.last.Options.IsGasPriceSet {
+		t.Fatalf("gas options = %#v, want gas price override", submitter.last.Options)
+	}
+	if submitter.last.Options.SignerAddress != "celestia1test" {
+		t.Fatalf("signer address = %q, want %q", submitter.last.Options.SignerAddress, "celestia1test")
 	}
 }

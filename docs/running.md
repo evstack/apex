@@ -64,6 +64,12 @@ data_source:
   celestia_app_grpc_addr: "localhost:9090"          # required when type: app
   namespaces: []                                   # hex-encoded, 29 bytes each
 
+submission:
+  enabled: false                                   # enable direct blob submission
+  app_grpc_addr: "localhost:9090"                  # celestia-app gRPC endpoint for submission
+  chain_id: "mocha-4"                              # chain ID used when signing transactions
+  signer_key: "/path/to/apex-submission.key"       # file containing the hex-encoded secp256k1 key
+
 storage:
   db_path: "apex.db"                               # SQLite database path
 

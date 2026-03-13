@@ -157,8 +157,8 @@ func Load(path string) (*Config, error) {
 	if token := os.Getenv("APEX_AUTH_TOKEN"); token != "" {
 		cfg.DataSource.AuthToken = token
 	}
-	if err := resolveSubmissionSignerKey(&cfg.Submission, filepath.Dir(path)); err != nil {
-		return nil, fmt.Errorf("resolving submission signer key: %w", err)
+	if err := resolveSubmissionSignerKeyPath(&cfg.Submission, filepath.Dir(path)); err != nil {
+		return nil, fmt.Errorf("resolving submission signer key path: %w", err)
 	}
 
 	if err := validate(&cfg); err != nil {
@@ -358,7 +358,7 @@ func validateSubmission(s *SubmissionConfig) error {
 	return nil
 }
 
-func resolveSubmissionSignerKey(s *SubmissionConfig, baseDir string) error {
+func resolveSubmissionSignerKeyPath(s *SubmissionConfig, baseDir string) error {
 	if !s.Enabled {
 		return nil
 	}
@@ -370,11 +370,24 @@ func resolveSubmissionSignerKey(s *SubmissionConfig, baseDir string) error {
 	if !filepath.IsAbs(keyPath) {
 		keyPath = filepath.Join(baseDir, keyPath)
 	}
+	keyPath = filepath.Clean(keyPath)
 
-	keyBytes, err := os.ReadFile(keyPath)
+	info, err := os.Stat(keyPath)
 	if err != nil {
-		return fmt.Errorf("read submission signer key %q: %w", keyPath, err)
+		return fmt.Errorf("stat submission signer key %q: %w", keyPath, err)
 	}
-	s.SignerPrivateKey = strings.TrimSpace(string(keyBytes))
+	if info.IsDir() {
+		return fmt.Errorf("submission signer key %q must be a file", keyPath)
+	}
+
+	keyFile, err := os.Open(keyPath)
+	if err != nil {
+		return fmt.Errorf("open submission signer key %q: %w", keyPath, err)
+	}
+	if err := keyFile.Close(); err != nil {
+		return fmt.Errorf("close submission signer key %q: %w", keyPath, err)
+	}
+
+	s.SignerKey = keyPath
 	return nil
 }

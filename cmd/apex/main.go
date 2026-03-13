@@ -25,6 +25,7 @@ import (
 	"github.com/evstack/apex/pkg/metrics"
 	"github.com/evstack/apex/pkg/profile"
 	"github.com/evstack/apex/pkg/store"
+	"github.com/evstack/apex/pkg/submit"
 	syncer "github.com/evstack/apex/pkg/sync"
 	"github.com/evstack/apex/pkg/types"
 )
@@ -113,6 +114,7 @@ func startCmd() *cobra.Command {
 			startLog := log.Info().
 				Str("version", version).
 				Str("datasource_type", cfg.DataSource.Type).
+				Bool("submission_enabled", cfg.Submission.Enabled).
 				Int("namespaces", len(cfg.DataSource.Namespaces))
 			if cfg.DataSource.Type == dataSourceTypeApp {
 				startLog = startLog.Str("app_grpc_addr", cfg.DataSource.CelestiaAppGRPCAddr)
@@ -171,7 +173,12 @@ func setupProfiling(cfg *config.Config) *profile.Server {
 func openDataSource(ctx context.Context, cfg *config.Config) (fetch.DataFetcher, fetch.ProofForwarder, error) {
 	switch cfg.DataSource.Type {
 	case dataSourceTypeApp:
-		appFetcher, err := fetch.NewCelestiaAppFetcher(cfg.DataSource.CelestiaAppGRPCAddr, cfg.DataSource.AuthToken, log.Logger)
+		appFetcher, err := fetch.NewCelestiaAppFetcher(
+			cfg.DataSource.CelestiaAppGRPCAddr,
+			cfg.DataSource.AuthToken,
+			cfg.DataSource.CelestiaAppGRPCInsecure,
+			log.Logger,
+		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("create celestia-app fetcher: %w", err)
 		}
@@ -275,33 +282,18 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	}
 	defer dataFetcher.Close() //nolint:errcheck
 
-	// Set up API layer.
-	notifier := api.NewNotifier(cfg.Subscription.BufferSize, cfg.Subscription.MaxSubscribers, log.Logger)
-	notifier.SetMetrics(rec)
-	svc := api.NewService(db, dataFetcher, proofFwd, notifier, log.Logger)
-
-	// Build and run the sync coordinator with observer hook.
-	coordOpts := []syncer.Option{
-		syncer.WithStartHeight(cfg.Sync.StartHeight),
-		syncer.WithBatchSize(cfg.Sync.BatchSize),
-		syncer.WithConcurrency(cfg.Sync.Concurrency),
-		syncer.WithLogger(log.Logger),
-		syncer.WithMetrics(rec),
-		syncer.WithObserver(func(h uint64, hdr *types.Header, blobs []types.Blob) {
-			notifier.Publish(api.HeightEvent{Height: h, Header: hdr, Blobs: blobs})
-		}),
-	}
-
-	backfillOpt, closeBackfill, err := maybeBackfillSourceOption(cfg, log.Logger)
+	svc, notifier, closeSubmitter, err := setupAPIService(cfg, db, dataFetcher, proofFwd, rec)
 	if err != nil {
 		return err
 	}
-	if closeBackfill != nil {
-		defer closeBackfill()
+	defer closeSubmitter()
+
+	// Build and run the sync coordinator with observer hook.
+	coordOpts, closeBackfill, err := buildCoordinatorOptions(cfg, notifier, rec)
+	if err != nil {
+		return err
 	}
-	if backfillOpt != nil {
-		coordOpts = append(coordOpts, backfillOpt)
-	}
+	defer closeBackfill()
 
 	coord := syncer.New(db, dataFetcher, coordOpts...)
 
@@ -358,6 +350,90 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 
 	log.Info().Msg("apex indexer stopped")
 	return nil
+}
+
+func openBlobSubmitter(cfg *config.Config) (*submit.DirectSubmitter, error) {
+	if !cfg.Submission.Enabled {
+		return nil, nil
+	}
+
+	appClient, err := submit.NewGRPCAppClient(
+		cfg.Submission.CelestiaAppGRPCAddr,
+		cfg.Submission.CelestiaAppGRPCInsecure,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create submission app client: %w", err)
+	}
+
+	signer, err := submit.LoadSigner(cfg.Submission.SignerKey)
+	if err != nil {
+		_ = appClient.Close()
+		return nil, fmt.Errorf("load submission signer: %w", err)
+	}
+
+	blobSubmitter, err := submit.NewDirectSubmitter(appClient, signer, submit.DirectConfig{
+		ChainID:             cfg.Submission.ChainID,
+		GasPrice:            cfg.Submission.GasPrice,
+		MaxGasPrice:         cfg.Submission.MaxGasPrice,
+		ConfirmationTimeout: time.Duration(cfg.Submission.ConfirmationTimeout) * time.Second,
+	})
+	if err != nil {
+		_ = appClient.Close()
+		return nil, fmt.Errorf("configure submission backend: %w", err)
+	}
+
+	return blobSubmitter, nil
+}
+
+func setupAPIService(cfg *config.Config, db store.Store, dataFetcher fetch.DataFetcher, proofFwd fetch.ProofForwarder, rec metrics.Recorder) (*api.Service, *api.Notifier, func(), error) {
+	blobSubmitter, err := openBlobSubmitter(cfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	closeSubmitter := func() {}
+	if blobSubmitter != nil {
+		closeSubmitter = func() {
+			_ = blobSubmitter.Close()
+		}
+	}
+
+	notifier := api.NewNotifier(cfg.Subscription.BufferSize, cfg.Subscription.MaxSubscribers, log.Logger)
+	notifier.SetMetrics(rec)
+
+	svcOpts := make([]api.ServiceOption, 0, 1)
+	if blobSubmitter != nil {
+		svcOpts = append(svcOpts, api.WithBlobSubmitter(blobSubmitter))
+	}
+
+	svc := api.NewService(db, dataFetcher, proofFwd, notifier, log.Logger, svcOpts...)
+	return svc, notifier, closeSubmitter, nil
+}
+
+func buildCoordinatorOptions(cfg *config.Config, notifier *api.Notifier, rec metrics.Recorder) ([]syncer.Option, func(), error) {
+	coordOpts := []syncer.Option{
+		syncer.WithStartHeight(cfg.Sync.StartHeight),
+		syncer.WithBatchSize(cfg.Sync.BatchSize),
+		syncer.WithConcurrency(cfg.Sync.Concurrency),
+		syncer.WithLogger(log.Logger),
+		syncer.WithMetrics(rec),
+		syncer.WithObserver(func(h uint64, hdr *types.Header, blobs []types.Blob) {
+			notifier.Publish(api.HeightEvent{Height: h, Header: hdr, Blobs: blobs})
+		}),
+	}
+
+	backfillOpt, closeBackfill, err := maybeBackfillSourceOption(cfg, log.Logger)
+	if err != nil {
+		return nil, nil, err
+	}
+	if closeBackfill == nil {
+		closeBackfill = func() {}
+	}
+	if backfillOpt != nil {
+		coordOpts = append(coordOpts, backfillOpt)
+	}
+
+	return coordOpts, closeBackfill, nil
 }
 
 func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *metrics.Server, profileSrv *profile.Server) {

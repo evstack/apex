@@ -41,3 +41,18 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go build -o bin/apex ./cmd/apex
+
+  e2e-submission:
+    name: E2E Submission
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: e2e/go.mod
+          cache-dependency-path: |
+            go.sum
+            e2e/go.sum
+      - working-directory: e2e
+        run: go test -race -count=1 -timeout 20m -run TestSubmissionViaJSONRPC ./...

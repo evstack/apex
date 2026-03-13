@@ -16,21 +16,23 @@ type Config struct {
 	Metrics      MetricsConfig      `yaml:"metrics"`
 	Profiling    ProfilingConfig    `yaml:"profiling"`
 	Log          LogConfig          `yaml:"log"`
+	Submission   SubmissionConfig   `yaml:"submission"`
 }
 
 // DataSourceConfig configures the Celestia data source.
 // Type selects the backend: "node" (default) uses a Celestia DA node,
 // "app" uses a celestia-app consensus node via Cosmos SDK gRPC.
 type DataSourceConfig struct {
-	Type                 string   `yaml:"type"` // "node" (default) or "app"
-	CelestiaNodeURL      string   `yaml:"celestia_node_url"`
-	CelestiaAppGRPCAddr  string   `yaml:"celestia_app_grpc_addr"`
-	BackfillSource       string   `yaml:"backfill_source"`         // "rpc" (default) or "db" for app mode
-	CelestiaAppDBPath    string   `yaml:"celestia_app_db_path"`    // required when backfill_source=db
-	CelestiaAppDBBackend string   `yaml:"celestia_app_db_backend"` // auto|pebble|leveldb
-	CelestiaAppDBLayout  string   `yaml:"celestia_app_db_layout"`  // auto|v1|v2
-	AuthToken            string   `yaml:"-"`                       //nolint:gosec // populated only via APEX_AUTH_TOKEN env var; not a hardcoded credential
-	Namespaces           []string `yaml:"namespaces"`
+	Type                    string   `yaml:"type"` // "node" (default) or "app"
+	CelestiaNodeURL         string   `yaml:"celestia_node_url"`
+	CelestiaAppGRPCAddr     string   `yaml:"celestia_app_grpc_addr"`
+	CelestiaAppGRPCInsecure bool     `yaml:"celestia_app_grpc_insecure"` // allow plaintext gRPC to non-loopback celestia-app endpoints
+	BackfillSource          string   `yaml:"backfill_source"`            // "rpc" (default) or "db" for app mode
+	CelestiaAppDBPath       string   `yaml:"celestia_app_db_path"`       // required when backfill_source=db
+	CelestiaAppDBBackend    string   `yaml:"celestia_app_db_backend"`    // auto|pebble|leveldb
+	CelestiaAppDBLayout     string   `yaml:"celestia_app_db_layout"`     // auto|v1|v2
+	AuthToken               string   `yaml:"-"`                          //nolint:gosec // populated only via APEX_AUTH_TOKEN env var; not a hardcoded credential
+	Namespaces              []string `yaml:"namespaces"`
 }
 
 // StorageConfig configures the persistence backend.
@@ -92,6 +94,18 @@ type LogConfig struct {
 	Format string `yaml:"format"`
 }
 
+// SubmissionConfig contains settings for the future blob submission pipeline.
+type SubmissionConfig struct {
+	Enabled                 bool    `yaml:"enabled"`
+	CelestiaAppGRPCAddr     string  `yaml:"app_grpc_addr"`
+	CelestiaAppGRPCInsecure bool    `yaml:"app_grpc_insecure"` // allow plaintext gRPC to non-loopback celestia-app endpoints
+	ChainID                 string  `yaml:"chain_id"`
+	SignerKey               string  `yaml:"signer_key"`           // path to a file containing the hex-encoded secp256k1 key
+	GasPrice                float64 `yaml:"gas_price"`            // 0 means unset; callers must provide gas_price per request
+	MaxGasPrice             float64 `yaml:"max_gas_price"`        // 0 disables the max gas price cap
+	ConfirmationTimeout     int     `yaml:"confirmation_timeout"` // seconds
+}
+
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
@@ -120,6 +134,15 @@ func DefaultConfig() Config {
 			BufferSize:     64,
 			MaxSubscribers: 1024,
 		},
+		Submission: SubmissionConfig{
+			Enabled:             false,
+			CelestiaAppGRPCAddr: "",
+			ChainID:             "",
+			SignerKey:           "",
+			GasPrice:            0,
+			MaxGasPrice:         0,
+			ConfirmationTimeout: 30,
+		},
 		Metrics: MetricsConfig{
 			Enabled:    true,
 			ListenAddr: ":9091",
@@ -141,6 +164,9 @@ func (c *Config) ParsedNamespaces() ([]types.Namespace, error) {
 	for _, hex := range c.DataSource.Namespaces {
 		ns, err := types.NamespaceFromHex(hex)
 		if err != nil {
+			return nil, fmt.Errorf("invalid namespace %q: %w", hex, err)
+		}
+		if err := ns.ValidateForBlob(); err != nil {
 			return nil, fmt.Errorf("invalid namespace %q: %w", hex, err)
 		}
 		namespaces = append(namespaces, ns)

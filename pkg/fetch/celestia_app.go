@@ -11,9 +11,9 @@ import (
 
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	cometpb "github.com/evstack/apex/pkg/api/grpc/gen/cosmos/base/tendermint/v1beta1"
+	"github.com/evstack/apex/pkg/grpcutil"
 	"github.com/evstack/apex/pkg/types"
 )
 
@@ -46,9 +46,9 @@ func (b bearerCreds) RequireTransportSecurity() bool { return false }
 
 // NewCelestiaAppFetcher creates a fetcher that reads from celestia-app's
 // Cosmos SDK gRPC endpoint. No connection is established at construction time.
-func NewCelestiaAppFetcher(grpcAddr, authToken string, log zerolog.Logger) (*CelestiaAppFetcher, error) {
+func NewCelestiaAppFetcher(grpcAddr, authToken string, allowInsecure bool, log zerolog.Logger) (*CelestiaAppFetcher, error) {
 	opts := []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(grpcutil.TransportCredentials(grpcAddr, allowInsecure)),
 	}
 	if authToken != "" {
 		opts = append(opts, grpc.WithPerRPCCredentials(newBearerCreds(authToken)))

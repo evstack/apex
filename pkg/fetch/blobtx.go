@@ -9,12 +9,14 @@ import (
 	"github.com/evstack/apex/pkg/types"
 )
 
-// blobTxTypeID is the trailing byte that identifies a BlobTx.
-// Defined in celestia-app as 0x62 ('b').
-const blobTxTypeID = 0x62
-
-// msgPayForBlobsTypeURL is the protobuf Any type URL for MsgPayForBlobs.
-const msgPayForBlobsTypeURL = "/celestia.blob.v1.MsgPayForBlobs"
+const (
+	// legacyBlobTxTypeID is the trailing byte used by older BlobTx encodings.
+	legacyBlobTxTypeID = 0x62
+	// protoBlobTxTypeID is the current protobuf type identifier used by Celestia.
+	protoBlobTxTypeID = types.ProtoBlobTxTypeID
+	// msgPayForBlobsTypeURL is the protobuf Any type URL for MsgPayForBlobs.
+	msgPayForBlobsTypeURL = "/celestia.blob.v1.MsgPayForBlobs"
+)
 
 // rawBlob holds the fields parsed from a BlobTx blob proto message.
 type rawBlob struct {
@@ -38,31 +40,129 @@ type parsedBlobTx struct {
 	PFB   pfbData
 }
 
-// parseBlobTx decodes a Celestia BlobTx envelope and extracts both the
-// blobs and the MsgPayForBlobs data (commitments, signer) from the inner tx.
-//
-// BlobTx wire format:
-//
-//	inner_tx (length-prefixed) || blob1 (length-prefixed) || blob2 ... || 0x62
+// parseBlobTx decodes either the current protobuf BlobTx envelope or the older
+// legacy envelope and extracts both the blobs and the MsgPayForBlobs data
+// (commitments, signer) from the inner tx.
 func parseBlobTx(raw []byte) (*parsedBlobTx, error) {
 	if len(raw) == 0 {
 		return nil, errors.New("empty BlobTx")
 	}
-	if raw[len(raw)-1] != blobTxTypeID {
-		return nil, fmt.Errorf("not a BlobTx: trailing byte 0x%02x, want 0x%02x", raw[len(raw)-1], blobTxTypeID)
+
+	parsed, protoErr := parseProtoBlobTx(raw)
+	if protoErr == nil {
+		return parsed, nil
 	}
 
-	// Strip trailing type byte.
+	parsed, legacyErr := parseLegacyBlobTx(raw)
+	if legacyErr == nil {
+		return parsed, nil
+	}
+
+	return nil, fmt.Errorf("decode blob tx: %w", errors.Join(protoErr, legacyErr))
+}
+
+func parseProtoBlobTx(raw []byte) (*parsedBlobTx, error) {
+	envelope := protoBlobTxEnvelope{}
+
+	data := raw
+	for len(data) > 0 {
+		next, err := envelope.consume(data)
+		if err != nil {
+			return nil, err
+		}
+		data = next
+	}
+
+	if err := envelope.validate(); err != nil {
+		return nil, err
+	}
+
+	pfb, err := parsePFBFromTx(envelope.innerTx)
+	if err != nil {
+		return nil, fmt.Errorf("parse inner tx: %w", err)
+	}
+
+	return &parsedBlobTx{Blobs: envelope.blobs, PFB: pfb}, nil
+}
+
+type protoBlobTxEnvelope struct {
+	innerTx []byte
+	blobs   []rawBlob
+	typeID  string
+}
+
+func (e *protoBlobTxEnvelope) consume(data []byte) ([]byte, error) {
+	num, typ, n := protowire.ConsumeTag(data)
+	if n < 0 {
+		return nil, errors.New("invalid proto tag")
+	}
+	data = data[n:]
+
+	switch {
+	case num == 1 && typ == protowire.BytesType:
+		val, n := protowire.ConsumeBytes(data)
+		if n < 0 {
+			return nil, errors.New("decode inner tx: invalid bytes")
+		}
+		e.innerTx = append([]byte(nil), val...)
+		return data[n:], nil
+	case num == 2 && typ == protowire.BytesType:
+		val, n := protowire.ConsumeBytes(data)
+		if n < 0 {
+			return nil, fmt.Errorf("decode blob %d: invalid bytes", len(e.blobs))
+		}
+
+		b, err := parseRawBlob(val)
+		if err != nil {
+			return nil, fmt.Errorf("parse blob %d: %w", len(e.blobs), err)
+		}
+		e.blobs = append(e.blobs, b)
+		return data[n:], nil
+	case num == 3 && typ == protowire.BytesType:
+		val, n := protowire.ConsumeBytes(data)
+		if n < 0 {
+			return nil, errors.New("decode BlobTx type_id: invalid bytes")
+		}
+		e.typeID = string(val)
+		return data[n:], nil
+	default:
+		n = protowire.ConsumeFieldValue(num, typ, data)
+		if n < 0 {
+			return nil, fmt.Errorf("field %d: invalid value for wire type %d", num, typ)
+		}
+		return data[n:], nil
+	}
+}
+
+func (e protoBlobTxEnvelope) validate() error {
+	if e.typeID != protoBlobTxTypeID {
+		return fmt.Errorf("not a proto BlobTx: type_id %q", e.typeID)
+	}
+	if len(e.innerTx) == 0 {
+		return errors.New("BlobTx has no inner tx")
+	}
+	if len(e.blobs) == 0 {
+		return errors.New("BlobTx has no blobs")
+	}
+	return nil
+}
+
+// parseLegacyBlobTx decodes the older BlobTx wire format:
+//
+//	inner_tx (length-prefixed) || blob1 (length-prefixed) || blob2 ... || 0x62
+func parseLegacyBlobTx(raw []byte) (*parsedBlobTx, error) {
+	if raw[len(raw)-1] != legacyBlobTxTypeID {
+		return nil, fmt.Errorf("not a legacy BlobTx: trailing byte 0x%02x, want 0x%02x", raw[len(raw)-1], legacyBlobTxTypeID)
+	}
+
 	data := raw[:len(raw)-1]
 
-	// Read inner SDK tx (length-prefixed).
 	innerTx, n := protowire.ConsumeBytes(data)
 	if n < 0 {
 		return nil, errors.New("decode inner tx: invalid length prefix")
 	}
 	data = data[n:]
 
-	// Parse MsgPayForBlobs from the inner Cosmos SDK tx.
 	pfb, err := parsePFBFromTx(innerTx)
 	if err != nil {
 		return nil, fmt.Errorf("parse inner tx: %w", err)
@@ -273,7 +373,7 @@ func extractBlobsFromBlock(txs [][]byte, namespaces []types.Namespace, height ui
 	blobIndex := 0
 
 	for _, tx := range txs {
-		if len(tx) == 0 || tx[len(tx)-1] != blobTxTypeID {
+		if len(tx) == 0 {
 			continue
 		}
 
@@ -284,12 +384,11 @@ func extractBlobsFromBlock(txs [][]byte, namespaces []types.Namespace, height ui
 		}
 
 		for i, rb := range parsed.Blobs {
-			if len(rb.Namespace) != types.NamespaceSize {
+			ns, ok := namespaceFromRawBlob(rb)
+			if !ok {
 				blobIndex++
 				continue
 			}
-			var ns types.Namespace
-			copy(ns[:], rb.Namespace)
 
 			if _, ok := nsSet[ns]; !ok {
 				blobIndex++
@@ -328,6 +427,25 @@ func extractBlobsFromBlock(txs [][]byte, namespaces []types.Namespace, height ui
 // the requested namespaces. It is used by both RPC and DB backfill paths.
 func ExtractBlobsFromBlock(txs [][]byte, namespaces []types.Namespace, height uint64) ([]types.Blob, error) {
 	return extractBlobsFromBlock(txs, namespaces, height)
+}
+
+func namespaceFromRawBlob(blob rawBlob) (types.Namespace, bool) {
+	switch len(blob.Namespace) {
+	case types.NamespaceSize:
+		var ns types.Namespace
+		copy(ns[:], blob.Namespace)
+		return ns, true
+	case types.NamespaceSize - 1:
+		if blob.NamespaceVersion > 0xff {
+			return types.Namespace{}, false
+		}
+		var ns types.Namespace
+		ns[0] = byte(blob.NamespaceVersion)
+		copy(ns[1:], blob.Namespace)
+		return ns, true
+	default:
+		return types.Namespace{}, false
+	}
 }
 
 // extractBytesField returns the first occurrence of a bytes-typed field.

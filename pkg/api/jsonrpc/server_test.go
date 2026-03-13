@@ -10,10 +10,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	gsquare "github.com/celestiaorg/go-square/v3/share"
 	"github.com/rs/zerolog"
 
 	"github.com/evstack/apex/pkg/api"
 	"github.com/evstack/apex/pkg/store"
+	"github.com/evstack/apex/pkg/submit"
 	"github.com/evstack/apex/pkg/types"
 )
 
@@ -125,9 +127,24 @@ func (f *mockFetcher) SubscribeHeaders(_ context.Context) (<-chan *types.Header,
 
 func (f *mockFetcher) Close() error { return nil }
 
+type mockSubmitter struct {
+	result *submit.Result
+	err    error
+	last   *submit.Request
+}
+
+func (m *mockSubmitter) Submit(_ context.Context, req *submit.Request) (*submit.Result, error) {
+	m.last = req
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.result, nil
+}
+
 func testNamespace(b byte) types.Namespace {
+	namespace := gsquare.MustNewV0Namespace([]byte("apexns" + string([]byte{b})))
 	var ns types.Namespace
-	ns[types.NamespaceSize-1] = b
+	copy(ns[:], namespace.Bytes())
 	return ns
 }
 
@@ -364,5 +381,73 @@ func TestJSONRPCStubMethods(t *testing.T) {
 				t.Error("expected error from stub method")
 			}
 		})
+	}
+}
+
+func TestJSONRPCBlobSubmitReadOnlyByDefault(t *testing.T) {
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
+	svc := api.NewService(newMockStore(), &mockFetcher{}, nil, notifier, zerolog.Nop())
+	srv := NewServer(svc, zerolog.Nop())
+
+	resp := doRPC(t, srv, "blob.Submit", []map[string]any{}, nil)
+	if resp.Error == nil {
+		t.Fatal("expected read-only error")
+	}
+	if resp.Error.Message != errReadOnly.Error() {
+		t.Fatalf("error = %q, want %q", resp.Error.Message, errReadOnly.Error())
+	}
+}
+
+func TestJSONRPCBlobSubmitDelegates(t *testing.T) {
+	notifier := api.NewNotifier(16, 1024, zerolog.Nop())
+	submitter := &mockSubmitter{result: &submit.Result{Height: 77}}
+	svc := api.NewService(
+		newMockStore(),
+		&mockFetcher{},
+		nil,
+		notifier,
+		zerolog.Nop(),
+		api.WithBlobSubmitter(submitter),
+	)
+	srv := NewServer(svc, zerolog.Nop())
+
+	ns := testNamespace(9)
+	blobSigner := []byte("01234567890123456789")
+	resp := doRPC(t, srv, "blob.Submit", []map[string]any{{
+		"namespace":     ns[:],
+		"data":          []byte("hello"),
+		"share_version": 1,
+		"commitment":    []byte("c1"),
+		"signer":        blobSigner,
+		"index":         -1,
+	}}, map[string]any{
+		"gas_price":        0.1,
+		"is_gas_price_set": true,
+		"max_gas_price":    1.5,
+		"tx_priority":      int(submit.PriorityHigh),
+	})
+	if resp.Error != nil {
+		t.Fatalf("RPC error: %s", resp.Error.Message)
+	}
+	if string(resp.Result) != "77" {
+		t.Fatalf("result = %s, want 77", resp.Result)
+	}
+	if submitter.last == nil {
+		t.Fatal("submitter request = nil")
+	}
+	if len(submitter.last.Blobs) != 1 {
+		t.Fatalf("blob count = %d, want 1", len(submitter.last.Blobs))
+	}
+	if submitter.last.Blobs[0].Namespace != ns {
+		t.Fatalf("namespace = %x, want %x", submitter.last.Blobs[0].Namespace, ns)
+	}
+	if string(submitter.last.Blobs[0].Data) != "hello" {
+		t.Fatalf("data = %q, want %q", submitter.last.Blobs[0].Data, "hello")
+	}
+	if string(submitter.last.Blobs[0].Signer) != string(blobSigner) {
+		t.Fatalf("signer = %x, want %x", submitter.last.Blobs[0].Signer, blobSigner)
+	}
+	if submitter.last.Options == nil || submitter.last.Options.TxPriority != submit.PriorityHigh {
+		t.Fatalf("options = %#v, want high priority", submitter.last.Options)
 	}
 }

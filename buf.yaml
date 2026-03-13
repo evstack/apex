@@ -4,6 +4,9 @@ modules:
 lint:
   use:
     - DEFAULT
+  ignore_only:
+    PACKAGE_VERSION_SUFFIX:
+      - proto/cosmos/crypto/secp256k1/keys.proto
 breaking:
   use:
     - FILE

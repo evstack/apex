@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package cosmos.tx.v1beta1;
+
+import "cosmos/base/abci/v1beta1/abci.proto";
+
+option go_package = "github.com/evstack/apex/pkg/api/grpc/gen/cosmos/tx/v1beta1;txv1beta1";
+
+service Service {
+  rpc BroadcastTx(BroadcastTxRequest) returns (BroadcastTxResponse);
+  rpc GetTx(GetTxRequest) returns (GetTxResponse);
+}
+
+message BroadcastTxRequest {
+  bytes tx_bytes = 1;
+  BroadcastMode mode = 2;
+}
+
+enum BroadcastMode {
+  BROADCAST_MODE_UNSPECIFIED = 0;
+  BROADCAST_MODE_BLOCK = 1;
+  BROADCAST_MODE_SYNC = 2;
+  BROADCAST_MODE_ASYNC = 3;
+}
+
+message BroadcastTxResponse {
+  cosmos.base.abci.v1beta1.TxResponse tx_response = 1;
+}
+
+message GetTxRequest {
+  string hash = 1;
+}
+
+message GetTxResponse {
+  cosmos.base.abci.v1beta1.TxResponse tx_response = 2;
+}

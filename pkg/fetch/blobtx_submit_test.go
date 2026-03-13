@@ -1,0 +1,73 @@
+package fetch
+
+import (
+	"testing"
+
+	gsquare "github.com/celestiaorg/go-square/v3/share"
+	"github.com/evstack/apex/pkg/submit"
+	"github.com/evstack/apex/pkg/types"
+	"google.golang.org/protobuf/types/known/anypb"
+)
+
+func TestParseBlobTxFromSubmitMarshaller(t *testing.T) {
+	t.Parallel()
+
+	namespace := testNamespaceType(3)
+	blob := submit.Blob{
+		Namespace:    namespace,
+		Data:         []byte("payload"),
+		ShareVersion: 1,
+		Commitment:   []byte("commitment"),
+		Signer:       []byte("01234567890123456789"),
+	}
+	pfb, err := submit.BuildMsgPayForBlobs("celestia1submitter", []submit.Blob{blob})
+	if err != nil {
+		t.Fatalf("BuildMsgPayForBlobs: %v", err)
+	}
+	msg, err := submit.MarshalMsgPayForBlobsAny(pfb)
+	if err != nil {
+		t.Fatalf("MarshalMsgPayForBlobsAny: %v", err)
+	}
+	bodyBytes, err := submit.MarshalTxBody([]*anypb.Any{msg}, "", 0)
+	if err != nil {
+		t.Fatalf("MarshalTxBody: %v", err)
+	}
+	innerTx, err := submit.MarshalTxRaw(bodyBytes, []byte("auth"), []byte("signature"))
+	if err != nil {
+		t.Fatalf("MarshalTxRaw: %v", err)
+	}
+	raw, err := submit.MarshalBlobTx(innerTx, []submit.Blob{blob})
+	if err != nil {
+		t.Fatalf("MarshalBlobTx: %v", err)
+	}
+
+	parsed, err := parseBlobTx(raw)
+	if err != nil {
+		t.Fatalf("parseBlobTx: %v", err)
+	}
+	if len(parsed.Blobs) != 1 {
+		t.Fatalf("got %d blobs, want 1", len(parsed.Blobs))
+	}
+	if ns, ok := namespaceFromRawBlob(parsed.Blobs[0]); !ok || ns != namespace {
+		t.Fatalf("namespace = %x, want %x", ns, namespace)
+	}
+	if string(parsed.Blobs[0].Data) != "payload" {
+		t.Fatalf("data = %q", parsed.Blobs[0].Data)
+	}
+	if parsed.Blobs[0].ShareVersion != 1 {
+		t.Fatalf("share version = %d, want 1", parsed.Blobs[0].ShareVersion)
+	}
+	if string(parsed.PFB.Signer) != "celestia1submitter" {
+		t.Fatalf("signer = %q", parsed.PFB.Signer)
+	}
+	if string(parsed.PFB.ShareCommitments[0]) != "commitment" {
+		t.Fatalf("commitment = %q", parsed.PFB.ShareCommitments[0])
+	}
+}
+
+func testNamespaceType(b byte) types.Namespace {
+	namespace := gsquare.MustNewV0Namespace([]byte("apexns" + string([]byte{b})))
+	var ns types.Namespace
+	copy(ns[:], namespace.Bytes())
+	return ns
+}

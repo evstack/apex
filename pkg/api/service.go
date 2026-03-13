@@ -11,6 +11,7 @@ import (
 
 	"github.com/evstack/apex/pkg/fetch"
 	"github.com/evstack/apex/pkg/store"
+	"github.com/evstack/apex/pkg/submit"
 	"github.com/evstack/apex/pkg/types"
 )
 
@@ -18,23 +19,38 @@ import (
 // handlers. It reads from the store, forwards proofs upstream, and manages
 // subscriptions via the Notifier.
 type Service struct {
-	store    store.Store
-	fetcher  fetch.DataFetcher
-	proof    fetch.ProofForwarder
-	notifier *Notifier
-	log      zerolog.Logger
+	store     store.Store
+	fetcher   fetch.DataFetcher
+	proof     fetch.ProofForwarder
+	submitter submit.Submitter
+	notifier  *Notifier
+	log       zerolog.Logger
+}
+
+// ServiceOption configures optional service behavior.
+type ServiceOption func(*Service)
+
+// WithBlobSubmitter installs an optional blob submission backend.
+func WithBlobSubmitter(submitter submit.Submitter) ServiceOption {
+	return func(s *Service) {
+		s.submitter = submitter
+	}
 }
 
 // NewService creates a new API service. proof may be nil if upstream proof
 // forwarding is not available.
-func NewService(s store.Store, f fetch.DataFetcher, proof fetch.ProofForwarder, n *Notifier, log zerolog.Logger) *Service {
-	return &Service{
+func NewService(s store.Store, f fetch.DataFetcher, proof fetch.ProofForwarder, n *Notifier, log zerolog.Logger, opts ...ServiceOption) *Service {
+	svc := &Service{
 		store:    s,
 		fetcher:  f,
 		proof:    proof,
 		notifier: n,
 		log:      log.With().Str("component", "api-service").Logger(),
 	}
+	for _, opt := range opts {
+		opt(svc)
+	}
+	return svc
 }
 
 // BlobGet returns a single blob matching the namespace and commitment at the
@@ -151,6 +167,25 @@ func (s *Service) BlobIncluded(ctx context.Context, height uint64, namespace []b
 	return s.proof.Included(ctx, height, namespace, proof, commitment)
 }
 
+// BlobSubmit validates the JSON-RPC request, delegates to the configured
+// submitter, and returns the JSON-RPC-compatible confirmation height.
+func (s *Service) BlobSubmit(ctx context.Context, blobsRaw, optionsRaw json.RawMessage) (json.RawMessage, error) {
+	if s.submitter == nil {
+		return nil, submit.ErrDisabled
+	}
+
+	req, err := submit.DecodeRequest(blobsRaw, optionsRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := s.submitter.Submit(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return submit.MarshalResult(result)
+}
+
 // BlobSubscribe creates a subscription for blobs in the given namespace.
 func (s *Service) BlobSubscribe(namespace types.Namespace) (*Subscription, error) {
 	return s.notifier.Subscribe([]types.Namespace{namespace})
@@ -232,6 +267,7 @@ type blobJSON struct {
 	Data         []byte `json:"data"`
 	ShareVersion uint32 `json:"share_version"`
 	Commitment   []byte `json:"commitment"`
+	Signer       []byte `json:"signer,omitempty"`
 	Index        int    `json:"index"`
 }
 
@@ -242,6 +278,7 @@ func MarshalBlob(b *types.Blob) json.RawMessage {
 		Data:         b.Data,
 		ShareVersion: b.ShareVersion,
 		Commitment:   b.Commitment,
+		Signer:       b.Signer,
 		Index:        b.Index,
 	})
 	return raw

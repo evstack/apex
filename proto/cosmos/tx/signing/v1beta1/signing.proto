@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package cosmos.tx.signing.v1beta1;
+
+option go_package = "github.com/evstack/apex/pkg/api/grpc/gen/cosmos/tx/signing/v1beta1;signingv1beta1";
+
+enum SignMode {
+  SIGN_MODE_UNSPECIFIED = 0;
+  SIGN_MODE_DIRECT = 1;
+}

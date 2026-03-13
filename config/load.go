@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/evstack/apex/pkg/types"
 	"gopkg.in/yaml.v3"
@@ -40,6 +42,8 @@ data_source:
 
   # Celestia-app Cosmos SDK gRPC endpoint (required when type: "app")
   # celestia_app_grpc_addr: "localhost:9090"
+  # Set true only when a non-loopback celestia-app endpoint is intentionally plaintext.
+  # celestia_app_grpc_insecure: false
 
   # Backfill source in app mode: "rpc" (default) or "db" (direct blockstore read)
   backfill_source: "rpc"
@@ -56,6 +60,25 @@ data_source:
 
   # Namespaces to index (hex-encoded, 29 bytes = 58 hex chars each).
   namespaces: []
+
+submission:
+  # Enable direct blob submission (updates in development).
+  enabled: false
+  # Cosmos SDK gRPC endpoint for celestia-app submission.
+  app_grpc_addr: ""
+  # Set true only when a non-loopback celestia-app endpoint is intentionally plaintext.
+  app_grpc_insecure: false
+  # Chain ID that will be used when signing transactions.
+  chain_id: ""
+  # Path to a file containing the hex-encoded secp256k1 signing key.
+  signer_key: "/path/to/apex-submission.key"
+  # Default gas price to pay per unit when the request does not override it.
+  # Zero means "unset"; submission requests must then provide gas_price explicitly.
+  gas_price: 0
+  # Maximum gas price that can be spent for a submission. Zero disables the cap.
+  max_gas_price: 0
+  # Seconds to wait for transaction confirmation before timing out.
+  confirmation_timeout: 30
 
 storage:
   # Storage backend: "sqlite" (default) or "s3"
@@ -139,15 +162,25 @@ func Load(path string) (*Config, error) {
 	if token := os.Getenv("APEX_AUTH_TOKEN"); token != "" {
 		cfg.DataSource.AuthToken = token
 	}
-
 	if err := validate(&cfg); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
+	}
+	if err := resolveSubmissionSignerKeyPath(&cfg.Submission, filepath.Dir(path)); err != nil {
+		return nil, fmt.Errorf("resolving submission signer key path: %w", err)
 	}
 
 	return &cfg, nil
 }
 
 func validateDataSource(ds *DataSourceConfig) error {
+	ds.Type = strings.TrimSpace(ds.Type)
+	ds.CelestiaNodeURL = strings.TrimSpace(ds.CelestiaNodeURL)
+	ds.CelestiaAppGRPCAddr = strings.TrimSpace(ds.CelestiaAppGRPCAddr)
+	ds.BackfillSource = strings.TrimSpace(ds.BackfillSource)
+	ds.CelestiaAppDBPath = strings.TrimSpace(ds.CelestiaAppDBPath)
+	ds.CelestiaAppDBBackend = strings.TrimSpace(ds.CelestiaAppDBBackend)
+	ds.CelestiaAppDBLayout = strings.TrimSpace(ds.CelestiaAppDBLayout)
+
 	switch ds.Type {
 	case "node", "":
 		if ds.CelestiaNodeURL == "" {
@@ -188,8 +221,16 @@ func validateDataSource(ds *DataSourceConfig) error {
 	default:
 		return fmt.Errorf("data_source.type %q is invalid; must be \"node\" or \"app\"", ds.Type)
 	}
-	for _, ns := range ds.Namespaces {
-		if _, err := types.NamespaceFromHex(ns); err != nil {
+	return validateNamespaces(ds.Namespaces)
+}
+
+func validateNamespaces(namespaces []string) error {
+	for _, ns := range namespaces {
+		parsed, err := types.NamespaceFromHex(ns)
+		if err != nil {
+			return fmt.Errorf("invalid namespace %q: %w", ns, err)
+		}
+		if err := parsed.ValidateForBlob(); err != nil {
 			return fmt.Errorf("invalid namespace %q: %w", ns, err)
 		}
 	}
@@ -244,6 +285,9 @@ func validate(cfg *Config) error {
 		return err
 	}
 	if err := validateProfiling(&cfg.Profiling); err != nil {
+		return err
+	}
+	if err := validateSubmission(&cfg.Submission); err != nil {
 		return err
 	}
 	if !validLogLevels[cfg.Log.Level] {
@@ -303,5 +347,63 @@ func validateProfiling(p *ProfilingConfig) error {
 	if p.Enabled && p.ListenAddr == "" {
 		return errors.New("profiling.listen_addr is required when profiling is enabled")
 	}
+	return nil
+}
+
+func validateSubmission(s *SubmissionConfig) error {
+	if !s.Enabled {
+		return nil
+	}
+	s.CelestiaAppGRPCAddr = strings.TrimSpace(s.CelestiaAppGRPCAddr)
+	s.ChainID = strings.TrimSpace(s.ChainID)
+	s.SignerKey = strings.TrimSpace(s.SignerKey)
+	if s.CelestiaAppGRPCAddr == "" {
+		return errors.New("submission.app_grpc_addr is required when submission.enabled is true")
+	}
+	if s.ChainID == "" {
+		return errors.New("submission.chain_id is required when submission.enabled is true")
+	}
+	if s.SignerKey == "" {
+		return errors.New("submission.signer_key is required when submission.enabled is true")
+	}
+	if s.ConfirmationTimeout <= 0 {
+		return errors.New("submission.confirmation_timeout must be positive")
+	}
+	if s.GasPrice < 0 {
+		return errors.New("submission.gas_price must be non-negative")
+	}
+	if s.MaxGasPrice < 0 {
+		return errors.New("submission.max_gas_price must be non-negative")
+	}
+	if s.MaxGasPrice > 0 && s.GasPrice > s.MaxGasPrice {
+		return errors.New("submission.gas_price must not exceed submission.max_gas_price")
+	}
+	return nil
+}
+
+func resolveSubmissionSignerKeyPath(s *SubmissionConfig, baseDir string) error {
+	if !s.Enabled {
+		return nil
+	}
+	keyPath := strings.TrimSpace(s.SignerKey)
+	s.SignerKey = keyPath
+	if keyPath == "" {
+		return nil
+	}
+
+	if !filepath.IsAbs(keyPath) {
+		keyPath = filepath.Join(baseDir, keyPath)
+	}
+	keyPath = filepath.Clean(keyPath)
+
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		return fmt.Errorf("stat submission signer key %q: %w", keyPath, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("submission signer key %q must be a file", keyPath)
+	}
+
+	s.SignerKey = keyPath
 	return nil
 }

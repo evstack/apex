@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	gsquare "github.com/celestiaorg/go-square/v3/share"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -129,8 +130,9 @@ func (f *mockFetcher) SubscribeHeaders(_ context.Context) (<-chan *types.Header,
 func (f *mockFetcher) Close() error { return nil }
 
 func testNamespace(b byte) types.Namespace {
+	namespace := gsquare.MustNewV0Namespace([]byte("apexns" + string([]byte{b})))
 	var ns types.Namespace
-	ns[types.NamespaceSize-1] = b
+	copy(ns[:], namespace.Bytes())
 	return ns
 }
 

@@ -20,7 +20,10 @@ const (
 	maxSequenceRetryRounds = 2
 )
 
-var errSequenceMismatch = errors.New("account sequence mismatch")
+var (
+	errSequenceMismatch = errors.New("account sequence mismatch")
+	errTooManyInFlight  = errors.New("too many in-flight submissions")
+)
 
 // DirectConfig contains the fixed submission settings Apex owns for direct
 // celestia-app writes.
@@ -43,6 +46,7 @@ type DirectSubmitter struct {
 	pollInterval        time.Duration
 	feeDenom            string
 	mu                  sync.Mutex
+	inFlight            int
 	accountNumber       uint64
 	nextSequence        uint64
 	sequenceReady       bool
@@ -99,6 +103,10 @@ func (s *DirectSubmitter) Submit(ctx context.Context, req *Request) (*Result, er
 	if err := validateSubmitRequest(req); err != nil {
 		return nil, err
 	}
+	if err := s.startSubmission(); err != nil {
+		return nil, err
+	}
+	defer s.finishSubmission()
 
 	broadcast, err := s.broadcastTx(ctx, req)
 	if err != nil {
@@ -157,6 +165,9 @@ func (s *DirectSubmitter) broadcastTx(ctx context.Context, req *Request) (*TxSta
 			return nil, err
 		}
 
+		if broadcast.Hash != "" {
+			s.rememberPendingLocked(broadcast.Hash, account.Sequence)
+		}
 		s.nextSequence = account.Sequence + 1
 		s.sequenceReady = true
 		return broadcast, nil
@@ -178,6 +189,9 @@ func (s *DirectSubmitter) nextAccountLocked(ctx context.Context) (*AccountInfo, 
 		s.accountNumber = account.AccountNumber
 		s.nextSequence = account.Sequence
 		s.sequenceReady = true
+		if err := s.reconcilePendingLocked(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	return &AccountInfo{
@@ -193,6 +207,26 @@ func (s *DirectSubmitter) invalidateSequenceLocked() {
 	s.sequenceReady = false
 }
 
+func (s *DirectSubmitter) startSubmission() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.maxInFlight > 0 && s.inFlight >= s.maxInFlight {
+		return errTooManyInFlight
+	}
+	s.inFlight++
+	return nil
+}
+
+func (s *DirectSubmitter) finishSubmission() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.inFlight > 0 {
+		s.inFlight--
+	}
+}
+
 func (s *DirectSubmitter) recoverSequenceLocked(account *AccountInfo, errText string) {
 	expected, ok := expectedSequenceFromMismatchText(errText)
 	if !ok {
@@ -203,6 +237,51 @@ func (s *DirectSubmitter) recoverSequenceLocked(account *AccountInfo, errText st
 	s.accountNumber = account.AccountNumber
 	s.nextSequence = expected
 	s.sequenceReady = true
+}
+
+func (s *DirectSubmitter) reconcilePendingLocked(ctx context.Context) error {
+	if len(s.pendingSequences) == 0 {
+		return nil
+	}
+
+	nextSequence := s.nextSequence
+	for hash, sequence := range s.pendingSequences {
+		_, err := s.app.GetTx(ctx, hash)
+		if err == nil {
+			delete(s.pendingSequences, hash)
+			continue
+		}
+		if isTxNotFound(err) {
+			if sequence >= nextSequence {
+				nextSequence = sequence + 1
+			}
+			continue
+		}
+		return fmt.Errorf("reconcile pending blob tx %s: %w", hash, err)
+	}
+
+	s.nextSequence = nextSequence
+	return nil
+}
+
+func (s *DirectSubmitter) rememberPendingLocked(hash string, sequence uint64) {
+	if hash == "" {
+		return
+	}
+	if s.pendingSequences == nil {
+		s.pendingSequences = make(map[string]uint64)
+	}
+	s.pendingSequences[hash] = sequence
+}
+
+func (s *DirectSubmitter) clearPending(hash string) {
+	if hash == "" {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.pendingSequences, hash)
 }
 
 func (s *DirectSubmitter) buildBlobTx(req *Request, account *AccountInfo) ([]byte, error) {
@@ -347,6 +426,7 @@ func (s *DirectSubmitter) waitForConfirmation(parent context.Context, hash strin
 	for {
 		tx, err := s.app.GetTx(ctx, hash)
 		if err == nil {
+			s.clearPending(hash)
 			if err := checkTxStatus("confirm", tx); err != nil {
 				return nil, err
 			}

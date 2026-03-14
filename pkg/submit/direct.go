@@ -87,6 +87,7 @@ func NewDirectSubmitter(app AppClient, signer *Signer, cfg DirectConfig) (*Direc
 		confirmationTimeout: cfg.ConfirmationTimeout,
 		pollInterval:        defaultPollInterval,
 		feeDenom:            defaultFeeDenom,
+		pendingSequences:    make(map[string]uint64),
 	}, nil
 }
 
@@ -267,9 +268,6 @@ func (s *DirectSubmitter) reconcilePendingLocked(ctx context.Context) error {
 func (s *DirectSubmitter) rememberPendingLocked(hash string, sequence uint64) {
 	if hash == "" {
 		return
-	}
-	if s.pendingSequences == nil {
-		s.pendingSequences = make(map[string]uint64)
 	}
 	s.pendingSequences[hash] = sequence
 }
@@ -478,14 +476,14 @@ func expectedSequenceFromMismatchText(text string) (uint64, bool) {
 
 	start := idx + len("expected ")
 	end := start
-	for end < len(text) && text[end] >= '0' && text[end] <= '9' {
+	for end < len(lower) && lower[end] >= '0' && lower[end] <= '9' {
 		end++
 	}
 	if end == start {
 		return 0, false
 	}
 
-	sequence, err := strconv.ParseUint(text[start:end], 10, 64)
+	sequence, err := strconv.ParseUint(lower[start:end], 10, 64)
 	if err != nil {
 		return 0, false
 	}

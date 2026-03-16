@@ -59,7 +59,7 @@ func TestHealthEndpoint(t *testing.T) {
 			mux := http.NewServeMux()
 			h.Register(mux)
 
-			req := httptest.NewRequest(http.MethodGet, "/health", nil)
+			req := httptest.NewRequest(http.MethodGet, "/health", nil) //nolint:noctx
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, req)
 
@@ -90,7 +90,7 @@ func TestReadyEndpoint(t *testing.T) {
 	mux := http.NewServeMux()
 	h.Register(mux)
 
-	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil) //nolint:noctx
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 

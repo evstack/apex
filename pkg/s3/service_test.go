@@ -3,6 +3,7 @@ package s3
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -57,7 +58,7 @@ func (m *mockStore) DeleteBucket(ctx context.Context, name string) error {
 }
 
 func (m *mockStore) ListBuckets(ctx context.Context) ([]Bucket, error) {
-	var result []Bucket
+	result := make([]Bucket, 0, len(m.buckets))
 	for _, b := range m.buckets {
 		result = append(result, *b)
 	}
@@ -142,7 +143,7 @@ func TestService_CreateBucket(t *testing.T) {
 	}
 
 	err = svc.CreateBucket(ctx, "test-bucket")
-	if err != ErrBucketAlreadyExists {
+	if !errors.Is(err, ErrBucketAlreadyExists) {
 		t.Fatalf("expected ErrBucketAlreadyExists, got: %v", err)
 	}
 }
@@ -202,7 +203,7 @@ func TestService_DeleteObject(t *testing.T) {
 	}
 
 	_, _, err = svc.GetObject(ctx, "test-bucket", "test-key")
-	if err != ErrObjectNotFound {
+	if !errors.Is(err, ErrObjectNotFound) {
 		t.Fatalf("expected ErrObjectNotFound, got: %v", err)
 	}
 }
@@ -249,7 +250,7 @@ func TestService_HeadObject(t *testing.T) {
 	}
 
 	_, err = svc.HeadObject(ctx, "test-bucket", "nonexistent")
-	if err != ErrObjectNotFound {
+	if !errors.Is(err, ErrObjectNotFound) {
 		t.Fatalf("expected ErrObjectNotFound, got: %v", err)
 	}
 

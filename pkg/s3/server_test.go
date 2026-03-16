@@ -24,7 +24,7 @@ type httpStoredObject struct {
 	data []byte
 }
 
-func newHttpMockStore() *httpMockStore {
+func newHTTPMockStore() *httpMockStore {
 	return &httpMockStore{
 		buckets: make(map[string]*Bucket),
 		objects: make(map[string]map[string]*httpStoredObject),
@@ -62,7 +62,7 @@ func (m *httpMockStore) DeleteBucket(_ context.Context, name string) error {
 }
 
 func (m *httpMockStore) ListBuckets(_ context.Context) ([]Bucket, error) {
-	var result []Bucket
+	result := make([]Bucket, 0, len(m.buckets))
 	for _, b := range m.buckets {
 		result = append(result, *b)
 	}
@@ -136,19 +136,19 @@ func (m *httpMockStore) HeadObject(_ context.Context, bucket, key string) (*Obje
 	return stored.obj, nil
 }
 
-func setupHttpTestServer(t *testing.T) (*Server, *httpMockStore) {
-	store := newHttpMockStore()
+func setupHTTPTestServer() (*Server, *httpMockStore) {
+	store := newHTTPMockStore()
 	svc := NewService(store, nil, types.Namespace{})
 	log := zerolog.New(io.Discard)
 	return NewServer(svc, "us-east-1", log), store
 }
 
 func TestServer_ListBuckets(t *testing.T) {
-	server, store := setupHttpTestServer(t)
-	store.PutBucket(context.Background(), "bucket1")
-	store.PutBucket(context.Background(), "bucket2")
+	server, store := setupHTTPTestServer()
+	_ = store.PutBucket(context.Background(), "bucket1")
+	_ = store.PutBucket(context.Background(), "bucket2")
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil) //nolint:noctx
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -165,9 +165,9 @@ func TestServer_ListBuckets(t *testing.T) {
 }
 
 func TestServer_CreateBucket(t *testing.T) {
-	server, _ := setupHttpTestServer(t)
+	server, _ := setupHTTPTestServer()
 
-	req := httptest.NewRequest(http.MethodPut, "/test-bucket", nil)
+	req := httptest.NewRequest(http.MethodPut, "/test-bucket", nil) //nolint:noctx
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -180,13 +180,13 @@ func TestServer_CreateBucket(t *testing.T) {
 }
 
 func TestServer_CreateBucket_AlreadyExists(t *testing.T) {
-	server, _ := setupHttpTestServer(t)
+	server, _ := setupHTTPTestServer()
 
-	req := httptest.NewRequest(http.MethodPut, "/test-bucket", nil)
+	req := httptest.NewRequest(http.MethodPut, "/test-bucket", nil) //nolint:noctx
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
-	req2 := httptest.NewRequest(http.MethodPut, "/test-bucket", nil)
+	req2 := httptest.NewRequest(http.MethodPut, "/test-bucket", nil) //nolint:noctx
 	rec2 := httptest.NewRecorder()
 	server.ServeHTTP(rec2, req2)
 
@@ -196,10 +196,10 @@ func TestServer_CreateBucket_AlreadyExists(t *testing.T) {
 }
 
 func TestServer_DeleteBucket(t *testing.T) {
-	server, store := setupHttpTestServer(t)
-	store.PutBucket(context.Background(), "test-bucket")
+	server, store := setupHTTPTestServer()
+	_ = store.PutBucket(context.Background(), "test-bucket")
 
-	req := httptest.NewRequest(http.MethodDelete, "/test-bucket", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/test-bucket", nil) //nolint:noctx
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -209,11 +209,11 @@ func TestServer_DeleteBucket(t *testing.T) {
 }
 
 func TestServer_DeleteBucket_NotEmpty(t *testing.T) {
-	server, store := setupHttpTestServer(t)
-	store.PutBucket(context.Background(), "test-bucket")
-	store.PutObject(context.Background(), "test-bucket", "key", []byte("data"), "text/plain")
+	server, store := setupHTTPTestServer()
+	_ = store.PutBucket(context.Background(), "test-bucket")
+	_, _ = store.PutObject(context.Background(), "test-bucket", "key", []byte("data"), "text/plain")
 
-	req := httptest.NewRequest(http.MethodDelete, "/test-bucket", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/test-bucket", nil) //nolint:noctx
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -223,11 +223,11 @@ func TestServer_DeleteBucket_NotEmpty(t *testing.T) {
 }
 
 func TestServer_PutGetObject(t *testing.T) {
-	server, store := setupHttpTestServer(t)
-	store.PutBucket(context.Background(), "test-bucket")
+	server, store := setupHTTPTestServer()
+	_ = store.PutBucket(context.Background(), "test-bucket")
 
 	body := []byte("hello world")
-	req := httptest.NewRequest(http.MethodPut, "/test-bucket/hello.txt", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/test-bucket/hello.txt", bytes.NewReader(body)) //nolint:noctx
 	req.Header.Set("Content-Type", "text/plain")
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
@@ -239,7 +239,7 @@ func TestServer_PutGetObject(t *testing.T) {
 		t.Errorf("expected ETag header")
 	}
 
-	req2 := httptest.NewRequest(http.MethodGet, "/test-bucket/hello.txt", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "/test-bucket/hello.txt", nil) //nolint:noctx
 	rec2 := httptest.NewRecorder()
 	server.ServeHTTP(rec2, req2)
 
@@ -255,10 +255,10 @@ func TestServer_PutGetObject(t *testing.T) {
 }
 
 func TestServer_GetObject_NotFound(t *testing.T) {
-	server, store := setupHttpTestServer(t)
-	store.PutBucket(context.Background(), "test-bucket")
+	server, store := setupHTTPTestServer()
+	_ = store.PutBucket(context.Background(), "test-bucket")
 
-	req := httptest.NewRequest(http.MethodGet, "/test-bucket/nonexistent.txt", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test-bucket/nonexistent.txt", nil) //nolint:noctx
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -268,11 +268,11 @@ func TestServer_GetObject_NotFound(t *testing.T) {
 }
 
 func TestServer_HeadObject(t *testing.T) {
-	server, store := setupHttpTestServer(t)
-	store.PutBucket(context.Background(), "test-bucket")
-	store.PutObject(context.Background(), "test-bucket", "test.txt", []byte("content"), "text/plain")
+	server, store := setupHTTPTestServer()
+	_ = store.PutBucket(context.Background(), "test-bucket")
+	_, _ = store.PutObject(context.Background(), "test-bucket", "test.txt", []byte("content"), "text/plain")
 
-	req := httptest.NewRequest(http.MethodHead, "/test-bucket/test.txt", nil)
+	req := httptest.NewRequest(http.MethodHead, "/test-bucket/test.txt", nil) //nolint:noctx
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -288,11 +288,11 @@ func TestServer_HeadObject(t *testing.T) {
 }
 
 func TestServer_DeleteObject(t *testing.T) {
-	server, store := setupHttpTestServer(t)
-	store.PutBucket(context.Background(), "test-bucket")
-	store.PutObject(context.Background(), "test-bucket", "test.txt", []byte("content"), "text/plain")
+	server, store := setupHTTPTestServer()
+	_ = store.PutBucket(context.Background(), "test-bucket")
+	_, _ = store.PutObject(context.Background(), "test-bucket", "test.txt", []byte("content"), "text/plain")
 
-	req := httptest.NewRequest(http.MethodDelete, "/test-bucket/test.txt", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/test-bucket/test.txt", nil) //nolint:noctx
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -300,7 +300,7 @@ func TestServer_DeleteObject(t *testing.T) {
 		t.Errorf("expected status 204, got %d", rec.Code)
 	}
 
-	req2 := httptest.NewRequest(http.MethodGet, "/test-bucket/test.txt", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "/test-bucket/test.txt", nil) //nolint:noctx
 	rec2 := httptest.NewRecorder()
 	server.ServeHTTP(rec2, req2)
 
@@ -310,12 +310,12 @@ func TestServer_DeleteObject(t *testing.T) {
 }
 
 func TestServer_ListObjects(t *testing.T) {
-	server, store := setupHttpTestServer(t)
-	store.PutBucket(context.Background(), "test-bucket")
-	store.PutObject(context.Background(), "test-bucket", "file1.txt", []byte("a"), "text/plain")
-	store.PutObject(context.Background(), "test-bucket", "file2.txt", []byte("bb"), "text/plain")
+	server, store := setupHTTPTestServer()
+	_ = store.PutBucket(context.Background(), "test-bucket")
+	_, _ = store.PutObject(context.Background(), "test-bucket", "file1.txt", []byte("a"), "text/plain")
+	_, _ = store.PutObject(context.Background(), "test-bucket", "file2.txt", []byte("bb"), "text/plain")
 
-	req := httptest.NewRequest(http.MethodGet, "/test-bucket?list-type=2", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test-bucket?list-type=2", nil) //nolint:noctx
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -332,10 +332,10 @@ func TestServer_ListObjects(t *testing.T) {
 }
 
 func TestServer_HeadBucket(t *testing.T) {
-	server, store := setupHttpTestServer(t)
-	store.PutBucket(context.Background(), "test-bucket")
+	server, store := setupHTTPTestServer()
+	_ = store.PutBucket(context.Background(), "test-bucket")
 
-	req := httptest.NewRequest(http.MethodHead, "/test-bucket", nil)
+	req := httptest.NewRequest(http.MethodHead, "/test-bucket", nil) //nolint:noctx
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -345,9 +345,9 @@ func TestServer_HeadBucket(t *testing.T) {
 }
 
 func TestServer_HeadBucket_NotFound(t *testing.T) {
-	server, _ := setupHttpTestServer(t)
+	server, _ := setupHTTPTestServer()
 
-	req := httptest.NewRequest(http.MethodHead, "/nonexistent-bucket", nil)
+	req := httptest.NewRequest(http.MethodHead, "/nonexistent-bucket", nil) //nolint:noctx
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 
@@ -357,9 +357,9 @@ func TestServer_HeadBucket_NotFound(t *testing.T) {
 }
 
 func TestServer_ErrorFormat(t *testing.T) {
-	server, _ := setupHttpTestServer(t)
+	server, _ := setupHTTPTestServer()
 
-	req := httptest.NewRequest(http.MethodGet, "/nonexistent-bucket/key", nil)
+	req := httptest.NewRequest(http.MethodGet, "/nonexistent-bucket/key", nil) //nolint:noctx
 	rec := httptest.NewRecorder()
 	server.ServeHTTP(rec, req)
 

@@ -2,6 +2,7 @@ package s3
 
 import (
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -256,7 +257,7 @@ func (s *Server) handleGetObject(r *http.Request, w http.ResponseWriter, bucket,
 	w.Header().Set("Content-Length", strconv.FormatInt(obj.Size, 10))
 	w.Header().Set("ETag", fmt.Sprintf(`"%s"`, obj.ETag))
 	w.Header().Set("Last-Modified", obj.LastModified.UTC().Format(http.TimeFormat))
-	w.Write(data)
+	_, _ = w.Write(data) //nolint:gosec
 }
 
 func (s *Server) handlePutObject(r *http.Request, w http.ResponseWriter, bucket, key string) {
@@ -308,21 +309,21 @@ func (s *Server) writeXML(w http.ResponseWriter, data any) {
 		s.writeError(w, http.StatusInternalServerError, "InternalError", err.Error())
 		return
 	}
-	w.Write([]byte(xml.Header))
-	w.Write(output)
+	_, _ = w.Write([]byte(xml.Header))
+	_, _ = w.Write(output)
 }
 
 func (s *Server) writeS3Error(w http.ResponseWriter, err error) {
 	switch {
-	case err == ErrBucketNotFound:
+	case errors.Is(err, ErrBucketNotFound):
 		s.writeError(w, http.StatusNotFound, "NoSuchBucket", "The specified bucket does not exist")
-	case err == ErrBucketNotEmpty:
+	case errors.Is(err, ErrBucketNotEmpty):
 		s.writeError(w, http.StatusConflict, "BucketNotEmpty", "The bucket you tried to delete is not empty")
-	case err == ErrBucketAlreadyExists:
+	case errors.Is(err, ErrBucketAlreadyExists):
 		s.writeError(w, http.StatusConflict, "BucketAlreadyExists", "The requested bucket name is not available")
-	case err == ErrObjectNotFound:
+	case errors.Is(err, ErrObjectNotFound):
 		s.writeError(w, http.StatusNotFound, "NoSuchKey", "The specified key does not exist")
-	case err == ErrObjectTooLarge:
+	case errors.Is(err, ErrObjectTooLarge):
 		s.writeError(w, http.StatusRequestEntityTooLarge, "EntityTooLarge", "Your proposed upload exceeds the maximum allowed size")
 	default:
 		s.writeError(w, http.StatusInternalServerError, "InternalError", err.Error())
@@ -345,6 +346,6 @@ func (s *Server) writeError(w http.ResponseWriter, code int, codeStr, message st
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(code)
 	output, _ := xml.Marshal(err)
-	w.Write([]byte(xml.Header))
-	w.Write(output)
+	_, _ = w.Write([]byte(xml.Header))
+	_, _ = w.Write(output)
 }

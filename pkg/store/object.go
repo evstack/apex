@@ -87,7 +87,7 @@ func (s *ObjectStore) ListBuckets(ctx context.Context) ([]s3.Bucket, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query buckets: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var buckets []s3.Bucket
 	for rows.Next() {
@@ -204,7 +204,7 @@ func (s *ObjectStore) ListObjects(ctx context.Context, bucket, prefix, delimiter
 	if err != nil {
 		return nil, fmt.Errorf("query objects: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := &s3.ListObjectsResult{
 		Bucket:    bucket,

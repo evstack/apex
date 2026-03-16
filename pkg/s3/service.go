@@ -2,6 +2,7 @@ package s3
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +14,7 @@ var (
 	ErrBucketNotFound      = errors.New("bucket not found")
 	ErrBucketNotEmpty      = errors.New("bucket not empty")
 	ErrBucketAlreadyExists = errors.New("bucket already exists")
-	ErrObjectNotFound       = errors.New("object not found")
+	ErrObjectNotFound      = errors.New("object not found")
 	ErrInvalidBucketName   = errors.New("invalid bucket name")
 	ErrInvalidObjectKey    = errors.New("invalid object key")
 	ErrObjectTooLarge      = errors.New("object too large")
@@ -74,7 +75,26 @@ func (s *Service) PutObject(ctx context.Context, bucket, key string, r io.Reader
 	if len(data) > maxObjectSize {
 		return nil, ErrObjectTooLarge
 	}
-	return s.store.PutObject(ctx, bucket, key, data, contentType)
+
+	obj, err := s.store.PutObject(ctx, bucket, key, data, contentType)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.submitter != nil {
+		blob, err := s.submitter.SubmitBlob(ctx, s.namespace, data)
+		if err != nil {
+			return nil, fmt.Errorf("submit to celestia: %w", err)
+		}
+
+		if updater, ok := s.store.(interface {
+			UpdateObjectWithBlobs(ctx context.Context, bucket, key string, height uint64, commitments []string) error
+		}); ok {
+			_ = updater.UpdateObjectWithBlobs(ctx, bucket, key, blob.Height, []string{hex.EncodeToString(blob.Commitment)})
+		}
+	}
+
+	return obj, nil
 }
 
 func (s *Service) GetObject(ctx context.Context, bucket, key string) (*Object, []byte, error) {

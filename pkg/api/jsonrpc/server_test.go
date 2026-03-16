@@ -168,7 +168,7 @@ func doRPC(t *testing.T, srv http.Handler, method string, params ...any) jsonRPC
 		t.Fatalf("marshal request: %v", err)
 	}
 
-	httpReq := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	httpReq := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body)) //nolint:noctx
 	httpReq.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, httpReq)

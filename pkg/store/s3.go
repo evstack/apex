@@ -93,6 +93,15 @@ type S3Store struct {
 	flushMu sync.Mutex // serializes flush operations
 }
 
+// Client returns the underlying S3 client if it's an *s3.Client,
+// allowing reuse for other components like S3ObjectStore.
+func (s *S3Store) Client() *s3.Client {
+	if client, ok := s.client.(*s3.Client); ok {
+		return client
+	}
+	return nil
+}
+
 type flushBuffers struct {
 	blobBuf   map[blobChunkKey][]types.Blob
 	headerBuf map[uint64][]*types.Header

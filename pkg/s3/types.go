@@ -33,11 +33,11 @@ type ListBucketsResult struct {
 }
 
 type ListObjectsResult struct {
-	Bucket    string
-	Prefix    string
-	Delimiter string
-	IsTruncated bool
-	Objects   []ObjectInfo
+	Bucket         string
+	Prefix         string
+	Delimiter      string
+	IsTruncated    bool
+	Objects        []ObjectInfo
 	CommonPrefixes []string
 }
 
@@ -62,9 +62,9 @@ type Part struct {
 }
 
 type MultipartUpload struct {
-	UploadID   string
-	Bucket     string
-	Key        string
-	Initiated  time.Time
-	Parts      []Part
+	UploadID  string
+	Bucket    string
+	Key       string
+	Initiated time.Time
+	Parts     []Part
 }

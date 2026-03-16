@@ -208,7 +208,7 @@ func setStoreMetrics(db store.Store, rec metrics.Recorder) {
 	}
 }
 
-func setupS3Server(cfg *config.Config, db *store.SQLiteStore, log zerolog.Logger) (*http.Server, error) {
+func setupS3Server(cfg *config.Config, db store.Store, submitter s3.BlobSubmitter, log zerolog.Logger) (*http.Server, error) {
 	if !cfg.S3.Enabled {
 		return nil, nil
 	}
@@ -222,8 +222,21 @@ func setupS3Server(cfg *config.Config, db *store.SQLiteStore, log zerolog.Logger
 		}
 	}
 
-	objStore := store.NewObjectStore(db, ns)
-	s3Svc := s3.NewService(objStore, nil, ns)
+	var objStore s3.ObjectStore
+	switch d := db.(type) {
+	case *store.SQLiteStore:
+		objStore = store.NewObjectStore(d, ns)
+	case *store.S3Store:
+		client := d.Client()
+		if client == nil {
+			return nil, errors.New("S3Store client is not *s3.Client")
+		}
+		objStore = store.NewS3ObjectStore(client)
+	default:
+		return nil, fmt.Errorf("unsupported store type for S3 API: %T", db)
+	}
+
+	s3Svc := s3.NewService(objStore, submitter, ns)
 	s3Srv := s3.NewServer(s3Svc, cfg.S3.Region, log)
 
 	httpSrv := &http.Server{
@@ -275,6 +288,7 @@ func maybeBackfillSourceOption(cfg *config.Config, logger zerolog.Logger) (synce
 	return syncer.WithBackfillSource(dbSrc), func() { _ = dbSrc.Close() }, nil
 }
 
+//nolint:gocyclo
 func runIndexer(ctx context.Context, cfg *config.Config) error {
 	// Parse namespaces from config.
 	namespaces, err := cfg.ParsedNamespaces()
@@ -295,15 +309,6 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	// Wire metrics into the store.
 	setStoreMetrics(db, rec)
 
-	// Setup S3 API server if enabled.
-	var s3Srv *http.Server
-	if sqliteDB, ok := db.(*store.SQLiteStore); ok {
-		s3Srv, err = setupS3Server(cfg, sqliteDB, log.Logger)
-		if err != nil {
-			return fmt.Errorf("setup S3 server: %w", err)
-		}
-	}
-
 	// Persist configured namespaces.
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -318,6 +323,19 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 	defer dataFetcher.Close() //nolint:errcheck
+
+	// Setup S3 API server if enabled.
+	var s3Srv *http.Server
+	if cfg.S3.Enabled {
+		var submitter s3.BlobSubmitter
+		if s, ok := dataFetcher.(s3.BlobSubmitter); ok {
+			submitter = s
+		}
+		s3Srv, err = setupS3Server(cfg, db, submitter, log.Logger)
+		if err != nil {
+			return fmt.Errorf("setup S3 server: %w", err)
+		}
+	}
 
 	// Set up API layer.
 	notifier := api.NewNotifier(cfg.Subscription.BufferSize, cfg.Subscription.MaxSubscribers, log.Logger)

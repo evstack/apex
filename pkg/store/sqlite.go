@@ -89,6 +89,18 @@ func configureSQLite(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys=ON"); err != nil {
 		return fmt.Errorf("set foreign_keys: %w", err)
 	}
+	// NORMAL is crash-safe with WAL and avoids an extra fsync per commit.
+	if _, err := db.ExecContext(ctx, "PRAGMA synchronous=NORMAL"); err != nil {
+		return fmt.Errorf("set synchronous: %w", err)
+	}
+	// 64 MB page cache (negative value = KiB).
+	if _, err := db.ExecContext(ctx, "PRAGMA cache_size=-65536"); err != nil {
+		return fmt.Errorf("set cache_size: %w", err)
+	}
+	// Keep temp tables and sort spills in memory.
+	if _, err := db.ExecContext(ctx, "PRAGMA temp_store=MEMORY"); err != nil {
+		return fmt.Errorf("set temp_store: %w", err)
+	}
 	return nil
 }
 
@@ -102,6 +114,7 @@ type migrationStep struct {
 var allMigrations = []migrationStep{
 	{version: 1, file: "migrations/001_init.sql"},
 	{version: 2, file: "migrations/002_commitment_index.sql"},
+	{version: 3, file: "migrations/003_blob_index_unique.sql"},
 }
 
 func (s *SQLiteStore) migrate() error {
@@ -170,13 +183,22 @@ func (s *SQLiteStore) PutBlobs(ctx context.Context, blobs []types.Blob) error {
 
 	for i := range blobs {
 		b := &blobs[i]
-		if err := ensureSQLiteBlobInvariant(ctx, tx, b); err != nil {
-			return err
-		}
-		if _, err := stmt.ExecContext(ctx,
+		res, err := stmt.ExecContext(ctx,
 			b.Height, b.Namespace[:], b.Commitment, b.Data, b.ShareVersion, b.Signer, b.Index,
-		); err != nil {
+		)
+		if err != nil {
 			return fmt.Errorf("insert blob at height %d index %d: %w", b.Height, b.Index, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("rows affected at height %d index %d: %w", b.Height, b.Index, err)
+		}
+		if n == 0 {
+			// INSERT OR IGNORE skipped this row — a unique constraint matched.
+			// Verify it is an idempotent re-insert, not a data conflict.
+			if err := verifyBlobNotConflicting(ctx, tx, b); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -367,12 +389,15 @@ func scanBlobRow(rows *sql.Rows) (types.Blob, error) {
 	return b, nil
 }
 
-func ensureSQLiteBlobInvariant(ctx context.Context, tx *sql.Tx, b *types.Blob) error {
-	existingByIndex, err := queryBlobByIndex(ctx, tx, b.Namespace, b.Height, b.Index)
+// verifyBlobNotConflicting is called only when INSERT OR IGNORE skipped a row.
+// It distinguishes an idempotent re-insert (same data) from a true conflict
+// (different data at the same position or commitment).
+func verifyBlobNotConflicting(ctx context.Context, tx *sql.Tx, b *types.Blob) error {
+	existing, err := queryBlobByIndex(ctx, tx, b.Namespace, b.Height, b.Index)
 	if err != nil {
 		return err
 	}
-	if existingByIndex != nil && !sameBlob(existingByIndex, b) {
+	if existing != nil && !sameBlob(existing, b) {
 		return fmt.Errorf("blob conflict at height %d namespace %s index %d", b.Height, b.Namespace, b.Index)
 	}
 

@@ -151,8 +151,8 @@ func TestDirectSubmitterRetriesSequenceMismatch(t *testing.T) {
 	if result.Height != 77 {
 		t.Fatalf("height = %d, want 77", result.Height)
 	}
-	if client.accountCalls != 1 {
-		t.Fatalf("account calls = %d, want 1", client.accountCalls)
+	if client.accountCalls != 2 {
+		t.Fatalf("account calls = %d, want 2", client.accountCalls)
 	}
 	if client.broadcastCalls != 2 {
 		t.Fatalf("broadcast calls = %d, want 2", client.broadcastCalls)
@@ -345,6 +345,7 @@ func TestDirectSubmitterRecoversAfterRestartWithPendingSequences(t *testing.T) {
 
 	signer := mustSigner(t)
 	client := newSequenceRecoveryAppClient(signer.Address(), 7, 11, 16)
+	client.accountSequenceQueue = []uint64{11, 16}
 
 	// Simulate a fresh process with no local sequence cache while the mempool
 	// still holds earlier pending transactions.
@@ -365,8 +366,8 @@ func TestDirectSubmitterRecoversAfterRestartWithPendingSequences(t *testing.T) {
 	if result.Height != 116 {
 		t.Fatalf("height = %d, want 116", result.Height)
 	}
-	if client.accountCalls != 1 {
-		t.Fatalf("account calls = %d, want 1", client.accountCalls)
+	if client.accountCalls != 2 {
+		t.Fatalf("account calls = %d, want 2", client.accountCalls)
 	}
 	if !slices.Equal(client.attemptSequences, []uint64{11, 16}) {
 		t.Fatalf("attempt sequences = %v, want [11 16]", client.attemptSequences)
@@ -382,6 +383,7 @@ func TestDirectSubmitterRecoversWhenCachedSequenceFallsBehindExternalWriter(t *t
 	signer := mustSigner(t)
 	client := newSequenceRecoveryAppClient(signer.Address(), 7, 16, 16)
 	client.afterSuccessNext = []uint64{19}
+	client.accountSequenceQueue = []uint64{16, 19}
 
 	submitter, err := NewDirectSubmitter(client, signer, DirectConfig{
 		ChainID:             "mocha-4",
@@ -408,8 +410,8 @@ func TestDirectSubmitterRecoversWhenCachedSequenceFallsBehindExternalWriter(t *t
 	if second.Height != 119 {
 		t.Fatalf("second height = %d, want 119", second.Height)
 	}
-	if client.accountCalls != 1 {
-		t.Fatalf("account calls = %d, want 1", client.accountCalls)
+	if client.accountCalls != 2 {
+		t.Fatalf("account calls = %d, want 2", client.accountCalls)
 	}
 	if !slices.Equal(client.attemptSequences, []uint64{16, 17, 19}) {
 		t.Fatalf("attempt sequences = %v, want [16 17 19]", client.attemptSequences)
@@ -451,6 +453,125 @@ func TestDirectSubmitterReconcilesPersistedPendingSequenceBeforeBroadcast(t *tes
 	}
 	if !slices.Equal(client.attemptSequences, []uint64{12}) {
 		t.Fatalf("attempt sequences = %v, want [12]", client.attemptSequences)
+	}
+}
+
+func TestDirectSubmitterMismatchDetectedByABCICode(t *testing.T) {
+	t.Parallel()
+
+	signer := mustSigner(t)
+	// RawLog contains no parseable sequence — detection must come from Code 32 alone.
+	client := &fakeAppClient{
+		accountInfos: []*AccountInfo{
+			{Address: signer.Address(), AccountNumber: 7, Sequence: 1},
+			{Address: signer.Address(), AccountNumber: 7, Sequence: 2},
+		},
+		broadcastStatuses: []*TxStatus{
+			{Code: 32, RawLog: "wrong sequence"},
+			{Hash: "ABCDEF"},
+		},
+		getTxStatuses: []*TxStatus{{Hash: "ABCDEF", Height: 88}},
+	}
+
+	submitter, err := NewDirectSubmitter(client, signer, DirectConfig{
+		ChainID:             "mocha-4",
+		GasPrice:            0.002,
+		ConfirmationTimeout: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewDirectSubmitter: %v", err)
+	}
+	submitter.pollInterval = time.Millisecond
+
+	result, err := submitter.Submit(context.Background(), testRequest())
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if result.Height != 88 {
+		t.Fatalf("height = %d, want 88", result.Height)
+	}
+	if client.broadcastCalls != 2 {
+		t.Fatalf("broadcast calls = %d, want 2", client.broadcastCalls)
+	}
+	if client.accountCalls != 2 {
+		t.Fatalf("account calls = %d, want 2", client.accountCalls)
+	}
+}
+
+func TestDirectSubmitterMismatchReQueryFails(t *testing.T) {
+	t.Parallel()
+
+	signer := mustSigner(t)
+	reQueryErr := errors.New("network unreachable")
+	client := &fakeAppClient{
+		accountInfos: []*AccountInfo{
+			{Address: signer.Address(), AccountNumber: 7, Sequence: 1},
+		},
+		accountErrs: []error{nil, reQueryErr},
+		broadcastStatuses: []*TxStatus{
+			{Code: 32, RawLog: "account sequence mismatch, expected 2, got 1"},
+		},
+	}
+
+	submitter, err := NewDirectSubmitter(client, signer, DirectConfig{
+		ChainID:             "mocha-4",
+		GasPrice:            0.002,
+		ConfirmationTimeout: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewDirectSubmitter: %v", err)
+	}
+	submitter.pollInterval = time.Millisecond
+
+	_, err = submitter.Submit(context.Background(), testRequest())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, reQueryErr) {
+		t.Fatalf("expected re-query error in chain, got: %v", err)
+	}
+}
+
+func TestDirectSubmitterExhaustsAllRetries(t *testing.T) {
+	t.Parallel()
+
+	signer := mustSigner(t)
+	client := &fakeAppClient{
+		accountInfos: []*AccountInfo{
+			{Address: signer.Address(), AccountNumber: 7, Sequence: 1},
+			{Address: signer.Address(), AccountNumber: 7, Sequence: 2},
+			{Address: signer.Address(), AccountNumber: 7, Sequence: 3},
+			{Address: signer.Address(), AccountNumber: 7, Sequence: 4},
+		},
+		broadcastStatuses: []*TxStatus{
+			{Code: 32, RawLog: "account sequence mismatch"},
+			{Code: 32, RawLog: "account sequence mismatch"},
+			{Code: 32, RawLog: "account sequence mismatch"},
+		},
+	}
+
+	submitter, err := NewDirectSubmitter(client, signer, DirectConfig{
+		ChainID:             "mocha-4",
+		GasPrice:            0.002,
+		ConfirmationTimeout: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewDirectSubmitter: %v", err)
+	}
+	submitter.pollInterval = time.Millisecond
+
+	_, err = submitter.Submit(context.Background(), testRequest())
+	if err == nil {
+		t.Fatal("expected error after exhausting retries, got nil")
+	}
+	if !errors.Is(err, errSequenceMismatch) {
+		t.Fatalf("expected errSequenceMismatch in chain, got: %v", err)
+	}
+	if client.broadcastCalls != 3 {
+		t.Fatalf("broadcast calls = %d, want 3", client.broadcastCalls)
+	}
+	if client.accountCalls != 4 {
+		t.Fatalf("account calls = %d, want 4", client.accountCalls)
 	}
 }
 
@@ -679,11 +800,12 @@ func decodeInnerTx(raw []byte) ([]byte, error) {
 }
 
 type sequenceRecoveryAppClient struct {
-	address           string
-	accountNumber     uint64
-	committedSequence uint64
-	nextAvailable     uint64
-	afterSuccessNext  []uint64
+	address              string
+	accountNumber        uint64
+	committedSequence    uint64
+	nextAvailable        uint64
+	afterSuccessNext     []uint64
+	accountSequenceQueue []uint64
 
 	mu               sync.Mutex
 	accountCalls     int
@@ -707,10 +829,15 @@ func (c *sequenceRecoveryAppClient) AccountInfo(_ context.Context, _ string) (*A
 	defer c.mu.Unlock()
 
 	c.accountCalls++
+	seq := c.committedSequence
+	if len(c.accountSequenceQueue) > 0 {
+		seq = c.accountSequenceQueue[0]
+		c.accountSequenceQueue = c.accountSequenceQueue[1:]
+	}
 	return &AccountInfo{
 		Address:       c.address,
 		AccountNumber: c.accountNumber,
-		Sequence:      c.committedSequence,
+		Sequence:      seq,
 	}, nil
 }
 

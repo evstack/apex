@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +16,7 @@ import (
 const (
 	defaultFeeDenom        = "utia"
 	defaultPollInterval    = time.Second
-	maxSequenceRetryRounds = 2
+	maxSequenceRetryRounds = 3
 )
 
 var (
@@ -137,7 +136,7 @@ func (s *DirectSubmitter) broadcastTx(ctx context.Context, req *Request) (*TxSta
 	defer s.mu.Unlock()
 
 	var lastErr error
-	for range maxSequenceRetryRounds {
+	for attempt := range maxSequenceRetryRounds {
 		account, err := s.nextAccountLocked(ctx)
 		if err != nil {
 			return nil, err
@@ -151,16 +150,20 @@ func (s *DirectSubmitter) broadcastTx(ctx context.Context, req *Request) (*TxSta
 		broadcast, err := s.app.BroadcastTx(ctx, txBytes)
 		if err != nil {
 			if isSequenceMismatchText(err.Error()) {
-				s.recoverSequenceLocked(account, err.Error())
-				lastErr = fmt.Errorf("%w: %w", errSequenceMismatch, err)
+				if recoverErr := s.recoverSequenceLocked(ctx); recoverErr != nil {
+					return nil, recoverErr
+				}
+				lastErr = fmt.Errorf("%w: attempt %d, address %s: %w", errSequenceMismatch, attempt+1, s.signer.Address(), err)
 				continue
 			}
 			return nil, fmt.Errorf("broadcast blob tx: %w", err)
 		}
 		if err := checkTxStatus("broadcast", broadcast); err != nil {
 			if errors.Is(err, errSequenceMismatch) {
-				s.recoverSequenceLocked(account, err.Error())
-				lastErr = err
+				if recoverErr := s.recoverSequenceLocked(ctx); recoverErr != nil {
+					return nil, recoverErr
+				}
+				lastErr = fmt.Errorf("attempt %d, address %s: %w", attempt+1, s.signer.Address(), err)
 				continue
 			}
 			return nil, err
@@ -228,16 +231,19 @@ func (s *DirectSubmitter) finishSubmission() {
 	}
 }
 
-func (s *DirectSubmitter) recoverSequenceLocked(account *AccountInfo, errText string) {
-	expected, ok := expectedSequenceFromMismatchText(errText)
-	if !ok {
-		s.invalidateSequenceLocked()
-		return
+func (s *DirectSubmitter) recoverSequenceLocked(ctx context.Context) error {
+	s.invalidateSequenceLocked()
+	account, err := s.app.AccountInfo(ctx, s.signer.Address())
+	if err != nil {
+		return fmt.Errorf("re-query account sequence after mismatch (address: %s): %w", s.signer.Address(), err)
 	}
-
+	if account == nil {
+		return fmt.Errorf("re-query account sequence after mismatch: empty response for %s", s.signer.Address())
+	}
 	s.accountNumber = account.AccountNumber
-	s.nextSequence = expected
+	s.nextSequence = account.Sequence
 	s.sequenceReady = true
+	return nil
 }
 
 func (s *DirectSubmitter) reconcilePendingLocked(ctx context.Context) error {
@@ -453,7 +459,7 @@ func checkTxStatus(stage string, tx *TxStatus) error {
 		return nil
 	}
 
-	if isSequenceMismatchText(tx.RawLog) {
+	if tx.Code == 32 {
 		return fmt.Errorf("%w: %s", errSequenceMismatch, tx.RawLog)
 	}
 	if tx.Codespace != "" {
@@ -465,29 +471,6 @@ func checkTxStatus(stage string, tx *TxStatus) error {
 func isSequenceMismatchText(text string) bool {
 	text = strings.ToLower(text)
 	return strings.Contains(text, "account sequence mismatch") || strings.Contains(text, "incorrect account sequence")
-}
-
-func expectedSequenceFromMismatchText(text string) (uint64, bool) {
-	lower := strings.ToLower(text)
-	idx := strings.Index(lower, "expected ")
-	if idx < 0 {
-		return 0, false
-	}
-
-	start := idx + len("expected ")
-	end := start
-	for end < len(lower) && lower[end] >= '0' && lower[end] <= '9' {
-		end++
-	}
-	if end == start {
-		return 0, false
-	}
-
-	sequence, err := strconv.ParseUint(lower[start:end], 10, 64)
-	if err != nil {
-		return 0, false
-	}
-	return sequence, true
 }
 
 func isTxNotFound(err error) bool {

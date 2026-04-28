@@ -5,6 +5,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	pb "github.com/evstack/apex/pkg/api/grpc/gen/apex/v1"
 	"google.golang.org/grpc"
@@ -16,10 +17,15 @@ func TestGRPCBlobQuery(t *testing.T) {
 		t.Skip("skipping Docker-backed e2e test in short mode")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), chainStartupTimeout)
-	defer cancel()
+	setupCtx, cancelSetup := context.WithTimeout(context.Background(), chainStartupTimeout)
+	defer cancelSetup()
 
-	grpcAddr, chainID, signerKeyHex, signerAddress := startSubmissionTestChain(t, ctx)
+	newRPCCtx := func(t *testing.T) (context.Context, context.CancelFunc) {
+		t.Helper()
+		return context.WithTimeout(context.Background(), 10*time.Second)
+	}
+
+	grpcAddr, chainID, signerKeyHex, signerAddress := startSubmissionTestChain(t, setupCtx)
 	namespace := testNamespace(t, []byte("apex-grpc"))
 	data := []byte("apex grpc query e2e")
 	commitment := mustBlobCommitment(t, namespace, data)
@@ -79,7 +85,9 @@ func TestGRPCBlobQuery(t *testing.T) {
 	headerClient := pb.NewHeaderServiceClient(conn)
 
 	t.Run("BlobService.GetByCommitment", func(t *testing.T) {
-		r, err := blobClient.GetByCommitment(ctx, &pb.GetByCommitmentRequest{Commitment: commitment})
+		rpcCtx, cancel := newRPCCtx(t)
+		defer cancel()
+		r, err := blobClient.GetByCommitment(rpcCtx, &pb.GetByCommitmentRequest{Commitment: commitment})
 		if err != nil {
 			t.Fatalf("GetByCommitment: %v", err)
 		}
@@ -95,7 +103,9 @@ func TestGRPCBlobQuery(t *testing.T) {
 	})
 
 	t.Run("BlobService.Get", func(t *testing.T) {
-		r, err := blobClient.Get(ctx, &pb.GetRequest{
+		rpcCtx, cancel := newRPCCtx(t)
+		defer cancel()
+		r, err := blobClient.Get(rpcCtx, &pb.GetRequest{
 			Height:     height,
 			Namespace:  namespace,
 			Commitment: commitment,
@@ -112,7 +122,9 @@ func TestGRPCBlobQuery(t *testing.T) {
 	})
 
 	t.Run("BlobService.GetAll", func(t *testing.T) {
-		r, err := blobClient.GetAll(ctx, &pb.GetAllRequest{
+		rpcCtx, cancel := newRPCCtx(t)
+		defer cancel()
+		r, err := blobClient.GetAll(rpcCtx, &pb.GetAllRequest{
 			Height:     height,
 			Namespaces: [][]byte{namespace},
 		})
@@ -135,7 +147,9 @@ func TestGRPCBlobQuery(t *testing.T) {
 	})
 
 	t.Run("HeaderService.GetByHeight", func(t *testing.T) {
-		r, err := headerClient.GetByHeight(ctx, &pb.GetByHeightRequest{Height: height})
+		rpcCtx, cancel := newRPCCtx(t)
+		defer cancel()
+		r, err := headerClient.GetByHeight(rpcCtx, &pb.GetByHeightRequest{Height: height})
 		if err != nil {
 			t.Fatalf("GetByHeight: %v", err)
 		}
@@ -148,7 +162,9 @@ func TestGRPCBlobQuery(t *testing.T) {
 	})
 
 	t.Run("HeaderService.LocalHead", func(t *testing.T) {
-		r, err := headerClient.LocalHead(ctx, &pb.LocalHeadRequest{})
+		rpcCtx, cancel := newRPCCtx(t)
+		defer cancel()
+		r, err := headerClient.LocalHead(rpcCtx, &pb.LocalHeadRequest{})
 		if err != nil {
 			t.Fatalf("LocalHead: %v", err)
 		}

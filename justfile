@@ -43,6 +43,9 @@ proto:
 # Run all checks (CI equivalent)
 check: tidy-check lint test build
 
-# Run the Docker-backed submission e2e test in the isolated e2e module.
-e2e-submission:
+# Run all Docker-backed e2e tests in the isolated e2e module (requires Docker).
+e2e:
     cd e2e && go test -race -count=1 -timeout 20m ./...
+
+# Run the full CI pipeline locally: lint + unit tests + build + e2e (requires Docker).
+ci: check e2e

@@ -24,6 +24,7 @@ import (
 	"github.com/evstack/apex/pkg/fetch"
 	"github.com/evstack/apex/pkg/metrics"
 	"github.com/evstack/apex/pkg/profile"
+	apexs3 "github.com/evstack/apex/pkg/s3"
 	"github.com/evstack/apex/pkg/store"
 	"github.com/evstack/apex/pkg/submit"
 	syncer "github.com/evstack/apex/pkg/sync"
@@ -214,6 +215,45 @@ func setStoreMetrics(db store.Store, rec metrics.Recorder) {
 	}
 }
 
+func setupS3Server(cfg *config.Config, db store.Store, blobSubmitter submit.Submitter, log zerolog.Logger) (*http.Server, error) {
+	if !cfg.S3.Enabled {
+		return nil, nil
+	}
+
+	var ns types.Namespace
+	if cfg.S3.Namespace != "" {
+		var err error
+		ns, err = types.NamespaceFromHex(cfg.S3.Namespace)
+		if err != nil {
+			return nil, fmt.Errorf("parse S3 namespace: %w", err)
+		}
+	}
+
+	sqliteDB, ok := db.(*store.SQLiteStore)
+	if !ok {
+		return nil, fmt.Errorf("S3 API requires SQLite store, got %T", db)
+	}
+
+	objStore := store.NewObjectStore(sqliteDB, ns)
+	s3Svc := apexs3.NewService(objStore, blobSubmitter, ns)
+	s3Srv := apexs3.NewServer(s3Svc, cfg.S3.Region, log)
+
+	httpSrv := &http.Server{
+		Addr:              cfg.S3.ListenAddr,
+		Handler:           s3Srv,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	go func() {
+		log.Info().Str("addr", cfg.S3.ListenAddr).Msg("S3 API server listening")
+		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error().Err(err).Msg("S3 API server error")
+		}
+	}()
+
+	return httpSrv, nil
+}
+
 func persistNamespaces(ctx context.Context, db store.Store, namespaces []types.Namespace) error {
 	for _, ns := range namespaces {
 		if err := db.PutNamespace(ctx, ns); err != nil {
@@ -282,11 +322,24 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	}
 	defer dataFetcher.Close() //nolint:errcheck
 
-	svc, notifier, closeSubmitter, err := setupAPIService(cfg, db, dataFetcher, proofFwd, rec)
+	blobSubmitter, err := openBlobSubmitter(cfg)
 	if err != nil {
 		return err
 	}
-	defer closeSubmitter()
+	if blobSubmitter != nil {
+		defer blobSubmitter.Close() //nolint:errcheck
+	}
+
+	// Setup S3 API server if enabled.
+	s3Srv, err := setupS3Server(cfg, db, blobSubmitter, log.Logger)
+	if err != nil {
+		return fmt.Errorf("setup S3 server: %w", err)
+	}
+
+	svc, notifier, err := setupAPIService(cfg, db, dataFetcher, proofFwd, rec, blobSubmitter)
+	if err != nil {
+		return err
+	}
 
 	// Build and run the sync coordinator with observer hook.
 	coordOpts, closeBackfill, err := buildCoordinatorOptions(cfg, notifier, rec)
@@ -342,7 +395,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 
 	err = coord.Run(ctx)
 
-	gracefulShutdown(httpSrv, grpcSrv, metricsSrv, profileSrv)
+	gracefulShutdown(httpSrv, grpcSrv, metricsSrv, profileSrv, s3Srv)
 
 	if err != nil && !errors.Is(err, context.Canceled) {
 		return fmt.Errorf("coordinator: %w", err)
@@ -385,19 +438,7 @@ func openBlobSubmitter(cfg *config.Config) (*submit.DirectSubmitter, error) {
 	return blobSubmitter, nil
 }
 
-func setupAPIService(cfg *config.Config, db store.Store, dataFetcher fetch.DataFetcher, proofFwd fetch.ProofForwarder, rec metrics.Recorder) (*api.Service, *api.Notifier, func(), error) {
-	blobSubmitter, err := openBlobSubmitter(cfg)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	closeSubmitter := func() {}
-	if blobSubmitter != nil {
-		closeSubmitter = func() {
-			_ = blobSubmitter.Close()
-		}
-	}
-
+func setupAPIService(cfg *config.Config, db store.Store, dataFetcher fetch.DataFetcher, proofFwd fetch.ProofForwarder, rec metrics.Recorder, blobSubmitter submit.Submitter) (*api.Service, *api.Notifier, error) {
 	notifier := api.NewNotifier(cfg.Subscription.BufferSize, cfg.Subscription.MaxSubscribers, log.Logger)
 	notifier.SetMetrics(rec)
 
@@ -407,7 +448,7 @@ func setupAPIService(cfg *config.Config, db store.Store, dataFetcher fetch.DataF
 	}
 
 	svc := api.NewService(db, dataFetcher, proofFwd, notifier, log.Logger, svcOpts...)
-	return svc, notifier, closeSubmitter, nil
+	return svc, notifier, nil
 }
 
 func buildCoordinatorOptions(cfg *config.Config, notifier *api.Notifier, rec metrics.Recorder) ([]syncer.Option, func(), error) {
@@ -436,7 +477,7 @@ func buildCoordinatorOptions(cfg *config.Config, notifier *api.Notifier, rec met
 	return coordOpts, closeBackfill, nil
 }
 
-func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *metrics.Server, profileSrv *profile.Server) {
+func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *metrics.Server, profileSrv *profile.Server, s3Srv *http.Server) {
 	stopped := make(chan struct{})
 	go func() {
 		grpcSrv.GracefulStop()
@@ -455,6 +496,12 @@ func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *me
 	defer shutdownCancel()
 	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("JSON-RPC server shutdown error")
+	}
+
+	if s3Srv != nil {
+		if err := s3Srv.Shutdown(shutdownCtx); err != nil {
+			log.Error().Err(err).Msg("S3 API server shutdown error")
+		}
 	}
 
 	if metricsSrv != nil {

@@ -189,6 +189,46 @@ func TestMarshalResultRejectsNil(t *testing.T) {
 	}
 }
 
+func TestBuildBlob(t *testing.T) {
+	t.Parallel()
+
+	ns := testNamespace(9)
+	blob, err := BuildBlob(ns, []byte("hello"), 0, nil)
+	if err != nil {
+		t.Fatalf("BuildBlob: %v", err)
+	}
+	if blob.Namespace != ns {
+		t.Fatalf("namespace = %x, want %x", blob.Namespace, ns)
+	}
+	if blob.ShareVersion != 0 {
+		t.Fatalf("share version = %d, want 0", blob.ShareVersion)
+	}
+	if blob.Index != -1 {
+		t.Fatalf("index = %d, want -1", blob.Index)
+	}
+	if len(blob.Commitment) == 0 {
+		t.Fatal("expected non-empty commitment")
+	}
+}
+
+func TestBuildBlobRejectsInvalidShareVersion(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildBlob(testNamespace(10), []byte("hello"), uint32(gsquare.MaxShareVersion)+1, nil)
+	if err == nil {
+		t.Fatal("expected error for invalid share version")
+	}
+}
+
+func TestBuildBlobRejectsReservedNamespace(t *testing.T) {
+	t.Parallel()
+
+	_, err := BuildBlob(reservedNamespace(), []byte("hello"), 0, nil)
+	if err == nil {
+		t.Fatal("expected error for reserved namespace")
+	}
+}
+
 func testNamespace(b byte) types.Namespace {
 	namespace := gsquare.MustNewV0Namespace([]byte("apexns" + string([]byte{b})))
 	var ns types.Namespace

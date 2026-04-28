@@ -330,3 +330,140 @@ log:
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestGenerateIncludesS3Section(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := Generate(path); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "\ns3:\n") {
+		t.Fatalf("generated config missing s3 section:\n%s", content)
+	}
+	if !strings.Contains(content, `listen_addr: ":8333"`) {
+		t.Fatalf("generated config missing s3 listen addr default:\n%s", content)
+	}
+}
+
+func TestLoadRejectsS3EnabledWithNonSQLiteStorage(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	content := `
+data_source:
+  type: "node"
+  celestia_node_url: "http://localhost:26658"
+
+storage:
+  type: "s3"
+  s3:
+    bucket: "bucket"
+    region: "us-east-1"
+
+s3:
+  enabled: true
+  listen_addr: ":8333"
+
+log:
+  level: "info"
+  format: "json"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+	if !strings.Contains(err.Error(), `s3.enabled requires storage.type to be "sqlite"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadRejectsS3SubmissionWithoutNamespace(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	keyPath := filepath.Join(t.TempDir(), "submit.key")
+	if err := os.WriteFile(keyPath, []byte("00112233"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	content := `
+data_source:
+  type: "app"
+  celestia_app_grpc_addr: "localhost:9090"
+
+storage:
+  type: "sqlite"
+  db_path: "apex.db"
+
+submission:
+  enabled: true
+  app_grpc_addr: "localhost:9090"
+  chain_id: "mychain"
+  signer_key: "` + keyPath + `"
+
+s3:
+  enabled: true
+  listen_addr: ":8333"
+
+log:
+  level: "info"
+  format: "json"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "s3.namespace is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadRejectsInvalidS3Namespace(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	content := `
+data_source:
+  type: "node"
+  celestia_node_url: "http://localhost:26658"
+
+storage:
+  type: "sqlite"
+  db_path: "apex.db"
+
+s3:
+  enabled: true
+  listen_addr: ":8333"
+  namespace: "not-a-namespace"
+
+log:
+  level: "info"
+  format: "json"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "s3.namespace is invalid") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

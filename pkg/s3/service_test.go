@@ -1,0 +1,371 @@
+package s3
+
+import (
+	"bytes"
+	"context"
+	"encoding/hex"
+	"errors"
+	"testing"
+	"time"
+
+	gsquare "github.com/celestiaorg/go-square/v3/share"
+	"github.com/evstack/apex/pkg/submit"
+	"github.com/evstack/apex/pkg/types"
+)
+
+type mockStore struct {
+	buckets map[string]*Bucket
+	objects map[string]map[string]*storedObject
+}
+
+type storedObject struct {
+	obj  *Object
+	data []byte
+}
+
+func newMockStore() *mockStore {
+	return &mockStore{
+		buckets: make(map[string]*Bucket),
+		objects: make(map[string]map[string]*storedObject),
+	}
+}
+
+func (m *mockStore) PutBucket(_ context.Context, name string) error {
+	if _, exists := m.buckets[name]; exists {
+		return ErrBucketAlreadyExists
+	}
+	now := time.Now()
+	m.buckets[name] = &Bucket{Name: name, CreatedAt: now, LastModified: now}
+	m.objects[name] = make(map[string]*storedObject)
+	return nil
+}
+
+func (m *mockStore) GetBucket(_ context.Context, name string) (*Bucket, error) {
+	b, ok := m.buckets[name]
+	if !ok {
+		return nil, ErrBucketNotFound
+	}
+	return b, nil
+}
+
+func (m *mockStore) DeleteBucket(_ context.Context, name string) error {
+	if _, ok := m.buckets[name]; !ok {
+		return ErrBucketNotFound
+	}
+	if len(m.objects[name]) > 0 {
+		return ErrBucketNotEmpty
+	}
+	delete(m.buckets, name)
+	delete(m.objects, name)
+	return nil
+}
+
+func (m *mockStore) ListBuckets(_ context.Context) ([]Bucket, error) {
+	result := make([]Bucket, 0, len(m.buckets))
+	for _, b := range m.buckets {
+		result = append(result, *b)
+	}
+	return result, nil
+}
+
+func (m *mockStore) PutObject(_ context.Context, bucket, key string, data []byte, contentType string, height uint64, commitments []string) (*Object, error) {
+	if _, ok := m.buckets[bucket]; !ok {
+		return nil, ErrBucketNotFound
+	}
+	now := time.Now()
+	obj := &Object{
+		Key:          key,
+		Bucket:       bucket,
+		Size:         int64(len(data)),
+		ETag:         "etag-" + key,
+		ContentType:  contentType,
+		LastModified: now,
+		Height:       height,
+		Commitments:  commitments,
+	}
+	m.objects[bucket][key] = &storedObject{obj: obj, data: data}
+	return obj, nil
+}
+
+func (m *mockStore) GetObject(_ context.Context, bucket, key string) (*Object, []byte, error) {
+	if _, ok := m.buckets[bucket]; !ok {
+		return nil, nil, ErrBucketNotFound
+	}
+	stored, ok := m.objects[bucket][key]
+	if !ok {
+		return nil, nil, ErrObjectNotFound
+	}
+	return stored.obj, stored.data, nil
+}
+
+func (m *mockStore) DeleteObject(_ context.Context, bucket, key string) error {
+	if _, ok := m.buckets[bucket]; !ok {
+		return ErrBucketNotFound
+	}
+	if _, ok := m.objects[bucket][key]; !ok {
+		return ErrObjectNotFound
+	}
+	delete(m.objects[bucket], key)
+	return nil
+}
+
+func (m *mockStore) ListObjects(_ context.Context, bucket, prefix, delimiter, _ string, _ int) (*ListObjectsResult, error) {
+	if _, ok := m.buckets[bucket]; !ok {
+		return nil, ErrBucketNotFound
+	}
+	result := &ListObjectsResult{Bucket: bucket, Prefix: prefix, Delimiter: delimiter}
+	for key, stored := range m.objects[bucket] {
+		result.Objects = append(result.Objects, ObjectInfo{
+			Key:          key,
+			LastModified: stored.obj.LastModified,
+			ETag:         stored.obj.ETag,
+			Size:         stored.obj.Size,
+			StorageClass: "STANDARD",
+		})
+	}
+	return result, nil
+}
+
+func (m *mockStore) HeadObject(_ context.Context, bucket, key string) (*Object, error) {
+	if _, ok := m.buckets[bucket]; !ok {
+		return nil, ErrBucketNotFound
+	}
+	stored, ok := m.objects[bucket][key]
+	if !ok {
+		return nil, ErrObjectNotFound
+	}
+	return stored.obj, nil
+}
+
+type mockSubmitter struct {
+	calls   int
+	err     error
+	lastReq *submit.Request
+}
+
+func (m *mockSubmitter) Submit(_ context.Context, req *submit.Request) (*submit.Result, error) {
+	m.calls++
+	m.lastReq = req
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &submit.Result{Height: uint64(100 + m.calls)}, nil
+}
+
+func testNamespace() types.Namespace {
+	namespace := gsquare.MustNewV0Namespace([]byte("apexs3x"))
+	var ns types.Namespace
+	copy(ns[:], namespace.Bytes())
+	return ns
+}
+
+func TestService_CreateBucket(t *testing.T) {
+	store := newMockStore()
+	svc := NewService(store, nil, types.Namespace{})
+
+	ctx := context.Background()
+	if err := svc.CreateBucket(ctx, "test-bucket"); err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	err := svc.CreateBucket(ctx, "test-bucket")
+	if !errors.Is(err, ErrBucketAlreadyExists) {
+		t.Fatalf("expected ErrBucketAlreadyExists, got: %v", err)
+	}
+}
+
+func TestService_PutGetObject(t *testing.T) {
+	store := newMockStore()
+	svc := NewService(store, nil, types.Namespace{})
+
+	ctx := context.Background()
+	if err := svc.CreateBucket(ctx, "test-bucket"); err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	data := []byte("hello world")
+	obj, err := svc.PutObject(ctx, "test-bucket", "test-key", bytes.NewReader(data), "text/plain")
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+	if obj.Size != int64(len(data)) {
+		t.Errorf("expected size %d, got %d", len(data), obj.Size)
+	}
+
+	gotObj, gotData, err := svc.GetObject(ctx, "test-bucket", "test-key")
+	if err != nil {
+		t.Fatalf("GetObject failed: %v", err)
+	}
+	if !bytes.Equal(gotData, data) {
+		t.Errorf("expected data %q, got %q", data, gotData)
+	}
+	if gotObj.Key != "test-key" {
+		t.Errorf("expected key test-key, got %s", gotObj.Key)
+	}
+}
+
+func TestService_PutObject_WithSubmitter(t *testing.T) {
+	store := newMockStore()
+	sub := &mockSubmitter{}
+	svc := NewService(store, sub, testNamespace())
+
+	ctx := context.Background()
+	if err := svc.CreateBucket(ctx, "test-bucket"); err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	data := []byte("celestia blob data")
+	obj, err := svc.PutObject(ctx, "test-bucket", "key1", bytes.NewReader(data), "application/octet-stream")
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+	if sub.calls != 1 {
+		t.Errorf("expected 1 submit call, got %d", sub.calls)
+	}
+	if obj.Height == 0 {
+		t.Error("expected non-zero height from submission")
+	}
+	if sub.lastReq == nil || len(sub.lastReq.Blobs) != 1 {
+		t.Fatalf("expected a single submitted blob, got %#v", sub.lastReq)
+	}
+	if got := sub.lastReq.Blobs[0]; !bytes.Equal(got.Data, data) {
+		t.Fatalf("submitted data = %q, want %q", got.Data, data)
+	}
+	if len(obj.Commitments) != 1 || obj.Commitments[0] != hex.EncodeToString(sub.lastReq.Blobs[0].Commitment) {
+		t.Fatalf("commitments = %v, want [%s]", obj.Commitments, hex.EncodeToString(sub.lastReq.Blobs[0].Commitment))
+	}
+}
+
+func TestService_PutObject_SubmitterFails(t *testing.T) {
+	store := newMockStore()
+	failSub := &failingSubmitter{}
+	svc := NewService(store, failSub, types.Namespace{})
+
+	ctx := context.Background()
+	if err := svc.CreateBucket(ctx, "test-bucket"); err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	_, err := svc.PutObject(ctx, "test-bucket", "key1", bytes.NewReader([]byte("data")), "text/plain")
+	if err == nil {
+		t.Fatal("expected error when submitter fails")
+	}
+
+	// Object should NOT be in store (rollback behavior).
+	_, _, getErr := svc.GetObject(ctx, "test-bucket", "key1")
+	if !errors.Is(getErr, ErrObjectNotFound) {
+		t.Fatalf("expected ErrObjectNotFound after failed submission, got: %v", getErr)
+	}
+}
+
+type failingSubmitter struct{}
+
+func (f *failingSubmitter) Submit(context.Context, *submit.Request) (*submit.Result, error) {
+	return nil, errors.New("celestia unavailable")
+}
+
+func TestService_PutObject_EmptySkipsSubmission(t *testing.T) {
+	store := newMockStore()
+	sub := &mockSubmitter{}
+	svc := NewService(store, sub, testNamespace())
+
+	ctx := context.Background()
+	if err := svc.CreateBucket(ctx, "test-bucket"); err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	_, err := svc.PutObject(ctx, "test-bucket", "empty", bytes.NewReader([]byte{}), "text/plain")
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+	if sub.calls != 0 {
+		t.Errorf("expected 0 submit calls for empty object, got %d", sub.calls)
+	}
+}
+
+func TestService_PutObject_TooLarge(t *testing.T) {
+	store := newMockStore()
+	svc := NewService(store, nil, types.Namespace{})
+
+	ctx := context.Background()
+	if err := svc.CreateBucket(ctx, "test-bucket"); err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	bigData := make([]byte, maxObjectSize+1)
+	_, err := svc.PutObject(ctx, "test-bucket", "big", bytes.NewReader(bigData), "application/octet-stream")
+	if !errors.Is(err, ErrObjectTooLarge) {
+		t.Fatalf("expected ErrObjectTooLarge, got: %v", err)
+	}
+}
+
+func TestService_DeleteObject(t *testing.T) {
+	store := newMockStore()
+	svc := NewService(store, nil, types.Namespace{})
+
+	ctx := context.Background()
+	if err := svc.CreateBucket(ctx, "test-bucket"); err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	if _, err := svc.PutObject(ctx, "test-bucket", "key", bytes.NewReader([]byte("data")), "text/plain"); err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+
+	if err := svc.DeleteObject(ctx, "test-bucket", "key"); err != nil {
+		t.Fatalf("DeleteObject failed: %v", err)
+	}
+
+	_, _, err := svc.GetObject(ctx, "test-bucket", "key")
+	if !errors.Is(err, ErrObjectNotFound) {
+		t.Fatalf("expected ErrObjectNotFound, got: %v", err)
+	}
+}
+
+func TestService_ListBuckets(t *testing.T) {
+	store := newMockStore()
+	svc := NewService(store, nil, types.Namespace{})
+
+	ctx := context.Background()
+	buckets, err := svc.ListBuckets(ctx)
+	if err != nil {
+		t.Fatalf("ListBuckets failed: %v", err)
+	}
+	if len(buckets) != 0 {
+		t.Errorf("expected 0 buckets, got %d", len(buckets))
+	}
+
+	_ = svc.CreateBucket(ctx, "a")
+	_ = svc.CreateBucket(ctx, "b")
+
+	buckets, err = svc.ListBuckets(ctx)
+	if err != nil {
+		t.Fatalf("ListBuckets failed: %v", err)
+	}
+	if len(buckets) != 2 {
+		t.Errorf("expected 2 buckets, got %d", len(buckets))
+	}
+}
+
+func TestService_HeadObject(t *testing.T) {
+	store := newMockStore()
+	svc := NewService(store, nil, types.Namespace{})
+
+	ctx := context.Background()
+	_ = svc.CreateBucket(ctx, "test-bucket")
+
+	_, err := svc.HeadObject(ctx, "test-bucket", "nonexistent")
+	if !errors.Is(err, ErrObjectNotFound) {
+		t.Fatalf("expected ErrObjectNotFound, got: %v", err)
+	}
+
+	_, _ = svc.PutObject(ctx, "test-bucket", "key", bytes.NewReader([]byte("data")), "text/plain")
+
+	obj, err := svc.HeadObject(ctx, "test-bucket", "key")
+	if err != nil {
+		t.Fatalf("HeadObject failed: %v", err)
+	}
+	if obj.Key != "key" {
+		t.Errorf("expected key 'key', got %s", obj.Key)
+	}
+}

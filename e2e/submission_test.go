@@ -117,6 +117,10 @@ type apexConfig struct {
 	StoragePath     string
 	RPCListenAddr   string
 	GRPCListenAddr  string
+	S3Enabled       bool
+	S3ListenAddr    string
+	S3Region        string
+	S3Namespace     []byte
 	GasPrice        float64
 	MaxGasPrice     float64
 	ConfirmTimeoutS int
@@ -212,6 +216,10 @@ func writeApexConfig(t *testing.T, cfg apexConfig) string {
 	t.Helper()
 
 	configPath := filepath.Join(t.TempDir(), "apex.yaml")
+	s3Region := cfg.S3Region
+	if s3Region == "" {
+		s3Region = "us-east-1"
+	}
 	configYAML := fmt.Sprintf(`data_source:
   type: "app"
   celestia_app_grpc_addr: "%s"
@@ -231,6 +239,12 @@ submission:
 storage:
   type: "sqlite"
   db_path: "%s"
+
+s3:
+  enabled: %t
+  listen_addr: "%s"
+  region: "%s"
+  namespace: "%s"
 
 rpc:
   listen_addr: "%s"
@@ -266,6 +280,10 @@ log:
 		cfg.MaxGasPrice,
 		cfg.ConfirmTimeoutS,
 		cfg.StoragePath,
+		cfg.S3Enabled,
+		cfg.S3ListenAddr,
+		s3Region,
+		hex.EncodeToString(cfg.S3Namespace),
 		cfg.RPCListenAddr,
 		cfg.GRPCListenAddr,
 	)
@@ -347,6 +365,31 @@ func waitForApexHTTP(t *testing.T, proc *apexProcess, rpcAddr string) {
 	}
 
 	t.Fatalf("apex HTTP endpoint did not become reachable at %s\n%s", url, proc.logs.String())
+}
+
+func waitForS3HTTP(t *testing.T, proc *apexProcess, s3Addr string) {
+	t.Helper()
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	url := "http://" + s3Addr + "/"
+
+	deadline := time.Now().Add(apexReadyTimeout)
+	for time.Now().Before(deadline) {
+		select {
+		case <-proc.done:
+			t.Fatalf("apex exited before S3 became ready: %v\n%s", proc.waitErr, proc.logs.String())
+		default:
+		}
+
+		resp, err := client.Get(url)
+		if err == nil {
+			_ = resp.Body.Close()
+			return
+		}
+		time.Sleep(submissionPollInterval)
+	}
+
+	t.Fatalf("apex S3 endpoint did not become reachable at %s\n%s", url, proc.logs.String())
 }
 
 func mustBlobCommitment(t *testing.T, namespace []byte, data []byte) []byte {

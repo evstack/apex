@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -175,6 +176,50 @@ func TestService_ReadOnly(t *testing.T) {
 	}
 	if err := svc.DeleteObject(ctx, "b", "k"); !errors.Is(err, ErrReadOnly) {
 		t.Errorf("DeleteObject: expected ErrReadOnly, got %v", err)
+	}
+}
+
+func TestService_ValidateBucketName(t *testing.T) {
+	cases := []struct {
+		name  string
+		valid bool
+	}{
+		{"my-bucket", true},
+		{"abc", true},
+		{"bucket123", true},
+		{"123bucket", true},
+		{"a", false},           // too short
+		{"ab", false},          // too short
+		{"-bucket", false},     // starts with hyphen
+		{"bucket-", false},     // ends with hyphen
+		{"Bucket", false},      // uppercase
+		{"bucket.name", false}, // dot not allowed
+		{"192.168.1.1", false}, // IP address
+		{strings.Repeat("a", 64), false}, // too long
+	}
+	sub := &mockSubmitter{}
+	for _, tc := range cases {
+		store := newMockStore()
+		svc := NewService(store, sub, types.Namespace{})
+		err := svc.CreateBucket(context.Background(), tc.name)
+		if tc.valid && errors.Is(err, ErrInvalidBucketName) {
+			t.Errorf("bucket %q: expected valid, got ErrInvalidBucketName", tc.name)
+		}
+		if !tc.valid && !errors.Is(err, ErrInvalidBucketName) {
+			t.Errorf("bucket %q: expected ErrInvalidBucketName, got %v", tc.name, err)
+		}
+	}
+}
+
+func TestService_PutObject_KeyTooLong(t *testing.T) {
+	store := newMockStore()
+	svc := NewService(store, &mockSubmitter{}, testNamespace())
+	_ = svc.CreateBucket(context.Background(), "test-bucket")
+
+	longKey := strings.Repeat("k", maxKeyLength+1)
+	_, err := svc.PutObject(context.Background(), "test-bucket", longKey, bytes.NewReader([]byte("data")), "text/plain")
+	if !errors.Is(err, ErrKeyTooLong) {
+		t.Fatalf("expected ErrKeyTooLong, got: %v", err)
 	}
 }
 
@@ -349,8 +394,8 @@ func TestService_ListBuckets(t *testing.T) {
 		t.Errorf("expected 0 buckets, got %d", len(buckets))
 	}
 
-	_ = svc.CreateBucket(ctx, "a")
-	_ = svc.CreateBucket(ctx, "b")
+	_ = svc.CreateBucket(ctx, "bucket-a")
+	_ = svc.CreateBucket(ctx, "bucket-b")
 
 	buckets, err = svc.ListBuckets(ctx)
 	if err != nil {

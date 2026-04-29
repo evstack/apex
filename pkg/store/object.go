@@ -63,18 +63,22 @@ func (o *ObjectStore) GetBucket(ctx context.Context, name string) (*s3.Bucket, e
 }
 
 func (o *ObjectStore) DeleteBucket(ctx context.Context, name string) error {
-	var count int
-	err := o.reader.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM s3_objects WHERE bucket = ?`, name).Scan(&count)
+	tx, err := o.writer.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var count int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM s3_objects WHERE bucket = ?`, name).Scan(&count); err != nil {
 		return fmt.Errorf("count objects: %w", err)
 	}
 	if count > 0 {
 		return s3.ErrBucketNotEmpty
 	}
 
-	result, err := o.writer.ExecContext(ctx,
-		`DELETE FROM s3_buckets WHERE name = ?`, name)
+	result, err := tx.ExecContext(ctx, `DELETE FROM s3_buckets WHERE name = ?`, name)
 	if err != nil {
 		return fmt.Errorf("delete bucket: %w", err)
 	}
@@ -82,7 +86,7 @@ func (o *ObjectStore) DeleteBucket(ctx context.Context, name string) error {
 	if affected == 0 {
 		return s3.ErrBucketNotFound
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (o *ObjectStore) ListBuckets(ctx context.Context) ([]s3.Bucket, error) {
@@ -108,10 +112,6 @@ func (o *ObjectStore) ListBuckets(ctx context.Context) ([]s3.Bucket, error) {
 }
 
 func (o *ObjectStore) PutObject(ctx context.Context, bucket, key string, data []byte, contentType string, height uint64, commitments []string) (*s3.Object, error) {
-	if _, err := o.GetBucket(ctx, bucket); err != nil {
-		return nil, err
-	}
-
 	etag := computeETag(data)
 	now := time.Now().UnixNano()
 	if commitments == nil {
@@ -132,6 +132,9 @@ func (o *ObjectStore) PutObject(ctx context.Context, bucket, key string, data []
 		   data = excluded.data`,
 		bucket, key, len(data), etag, contentType, now, height, o.ns.String(), string(commitmentsJSON), data)
 	if err != nil {
+		if isSQLiteFKConstraint(err) {
+			return nil, s3.ErrBucketNotFound
+		}
 		return nil, fmt.Errorf("insert object: %w", err)
 	}
 
@@ -284,6 +287,10 @@ func (o *ObjectStore) HeadObject(ctx context.Context, bucket, key string) (*s3.O
 
 func isSQLiteUniqueConstraint(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
+}
+
+func isSQLiteFKConstraint(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "FOREIGN KEY constraint failed")
 }
 
 // computeETag returns the MD5 hex digest of data, matching S3's ETag spec.

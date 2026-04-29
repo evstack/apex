@@ -48,16 +48,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	bucket, key := parsePath(r.URL.Path)
-	query := r.URL.Query()
+	bucket, key := parsePath(r)
 
 	switch {
 	case bucket == "" && key == "":
 		s.handleService(r, w)
 	case bucket != "" && key == "":
-		if query.Get("list-type") != "" || query.Has("prefix") || query.Has("delimiter") {
-			s.handleListObjects(r, w, bucket)
-		} else if r.Method == http.MethodGet {
+		if r.Method == http.MethodGet {
 			s.handleListObjects(r, w, bucket)
 		} else if r.Method == http.MethodPut {
 			s.handleCreateBucket(r, w, bucket)
@@ -75,14 +72,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func parsePath(p string) (bucket, key string) {
-	p = strings.TrimPrefix(p, "/")
-	if p == "" {
+func parsePath(r *http.Request) (bucket, key string) {
+	// Use RawPath when available so percent-encoded characters in bucket/key
+	// names (e.g. %2F for a literal slash in a key) are not pre-decoded by
+	// net/http before we split on "/".
+	raw := r.URL.RawPath
+	if raw == "" {
+		raw = r.URL.Path
+	}
+	raw = strings.TrimPrefix(raw, "/")
+	if raw == "" {
 		return "", ""
 	}
-
-	// URL-decode each component to handle special characters.
-	parts := strings.SplitN(p, "/", 2)
+	parts := strings.SplitN(raw, "/", 2)
 	bucket, _ = url.PathUnescape(parts[0])
 	if len(parts) > 1 {
 		key, _ = url.PathUnescape(parts[1])
@@ -335,6 +337,10 @@ func (s *Server) writeS3Error(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrReadOnly):
 		s.writeError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", err.Error())
+	case errors.Is(err, ErrInvalidBucketName):
+		s.writeError(w, http.StatusBadRequest, "InvalidBucketName", err.Error())
+	case errors.Is(err, ErrKeyTooLong):
+		s.writeError(w, http.StatusBadRequest, "KeyTooLongError", "Your key is too long")
 	case errors.Is(err, ErrBucketNotFound):
 		s.writeError(w, http.StatusNotFound, "NoSuchBucket", "The specified bucket does not exist")
 	case errors.Is(err, ErrBucketNotEmpty):

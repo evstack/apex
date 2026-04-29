@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 
 	"github.com/evstack/apex/pkg/submit"
@@ -16,8 +17,10 @@ var (
 	ErrBucketNotFound      = errors.New("bucket not found")
 	ErrBucketNotEmpty      = errors.New("bucket not empty")
 	ErrBucketAlreadyExists = errors.New("bucket already exists")
+	ErrInvalidBucketName   = errors.New("bucket name is invalid: must be 3-63 lowercase alphanumeric characters or hyphens, start and end with a letter or number, and not be an IP address")
 	ErrObjectNotFound      = errors.New("object not found")
 	ErrObjectTooLarge      = errors.New("object too large")
+	ErrKeyTooLong          = errors.New("object key exceeds maximum length of 1024 bytes")
 	ErrReadOnly            = errors.New("S3 API is read-only: submission is not configured")
 )
 
@@ -55,6 +58,9 @@ func (s *Service) CreateBucket(ctx context.Context, name string) error {
 	if s.submitter == nil {
 		return ErrReadOnly
 	}
+	if err := validateBucketName(name); err != nil {
+		return err
+	}
 	return s.store.PutBucket(ctx, name)
 }
 
@@ -81,6 +87,9 @@ func (s *Service) HeadBucket(ctx context.Context, name string) (*Bucket, error) 
 func (s *Service) PutObject(ctx context.Context, bucket, key string, r io.Reader, contentType string) (*Object, error) {
 	if s.submitter == nil {
 		return nil, ErrReadOnly
+	}
+	if len(key) > maxKeyLength {
+		return nil, ErrKeyTooLong
 	}
 
 	data, err := io.ReadAll(r)
@@ -142,4 +151,25 @@ func (s *Service) ListObjects(ctx context.Context, bucket, prefix, delimiter, ma
 
 func (s *Service) HeadObject(ctx context.Context, bucket, key string) (*Object, error) {
 	return s.store.HeadObject(ctx, bucket, key)
+}
+
+// validateBucketName enforces S3 bucket naming rules:
+// 3-63 lowercase alphanumeric characters or hyphens, starting and ending
+// with a letter or number, and not formatted as an IP address.
+func validateBucketName(name string) error {
+	if len(name) < 3 || len(name) > 63 {
+		return ErrInvalidBucketName
+	}
+	for _, c := range name {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+			return ErrInvalidBucketName
+		}
+	}
+	if name[0] == '-' || name[len(name)-1] == '-' {
+		return ErrInvalidBucketName
+	}
+	if net.ParseIP(name) != nil {
+		return ErrInvalidBucketName
+	}
+	return nil
 }

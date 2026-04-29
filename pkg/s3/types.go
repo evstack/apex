@@ -8,6 +8,9 @@ const (
 	// maxObjectSize is the maximum single-PUT object size.
 	// Capped at Celestia's blob size limit since each object maps to one blob.
 	maxObjectSize = 2 * 1024 * 1024 // 2MB
+
+	// maxKeyLength is the S3 maximum object key length in bytes.
+	maxKeyLength = 1024
 )
 
 // Bucket represents an S3 bucket.

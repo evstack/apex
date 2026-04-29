@@ -336,10 +336,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("setup S3 server: %w", err)
 	}
 
-	svc, notifier, err := setupAPIService(cfg, db, dataFetcher, proofFwd, rec, blobSubmitter)
-	if err != nil {
-		return err
-	}
+	svc, notifier := setupAPIService(cfg, db, dataFetcher, proofFwd, rec, blobSubmitter)
 
 	// Build and run the sync coordinator with observer hook.
 	coordOpts, closeBackfill, err := buildCoordinatorOptions(cfg, notifier, rec)
@@ -438,7 +435,7 @@ func openBlobSubmitter(cfg *config.Config) (*submit.DirectSubmitter, error) {
 	return blobSubmitter, nil
 }
 
-func setupAPIService(cfg *config.Config, db store.Store, dataFetcher fetch.DataFetcher, proofFwd fetch.ProofForwarder, rec metrics.Recorder, blobSubmitter submit.Submitter) (*api.Service, *api.Notifier, error) {
+func setupAPIService(cfg *config.Config, db store.Store, dataFetcher fetch.DataFetcher, proofFwd fetch.ProofForwarder, rec metrics.Recorder, blobSubmitter submit.Submitter) (*api.Service, *api.Notifier) {
 	notifier := api.NewNotifier(cfg.Subscription.BufferSize, cfg.Subscription.MaxSubscribers, log.Logger)
 	notifier.SetMetrics(rec)
 
@@ -448,7 +445,7 @@ func setupAPIService(cfg *config.Config, db store.Store, dataFetcher fetch.DataF
 	}
 
 	svc := api.NewService(db, dataFetcher, proofFwd, notifier, log.Logger, svcOpts...)
-	return svc, notifier, nil
+	return svc, notifier
 }
 
 func buildCoordinatorOptions(cfg *config.Config, notifier *api.Notifier, rec metrics.Recorder) ([]syncer.Option, func(), error) {

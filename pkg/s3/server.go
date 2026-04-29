@@ -20,19 +20,33 @@ type Server struct {
 	svc    *Service
 	log    zerolog.Logger
 	region string
+	auth   *authConfig
 }
 
 // NewServer creates a new S3-compatible HTTP server.
-func NewServer(svc *Service, region string, log zerolog.Logger) *Server {
+func NewServer(svc *Service, region, accessKeyID, secretAccessKey string, log zerolog.Logger) *Server {
+	var auth *authConfig
+	if accessKeyID != "" || secretAccessKey != "" {
+		auth = &authConfig{
+			accessKeyID:     accessKeyID,
+			secretAccessKey: secretAccessKey,
+		}
+	}
 	return &Server{
 		svc:    svc,
 		log:    log.With().Str("component", "s3-server").Logger(),
 		region: region,
+		auth:   auth,
 	}
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.log.Debug().Str("method", r.Method).Str("path", r.URL.Path).Msg("request")
+
+	if authErr := s.authenticateRequest(r); authErr != nil {
+		s.writeError(w, http.StatusForbidden, authErr.code, authErr.message)
+		return
+	}
 
 	bucket, key := parsePath(r.URL.Path)
 	query := r.URL.Query()

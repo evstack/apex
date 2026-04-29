@@ -3,12 +3,17 @@ package s3
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/evstack/apex/pkg/types"
 	"github.com/rs/zerolog"
 )
@@ -17,7 +22,14 @@ func setupHTTPTestServer() (*Server, *mockStore) {
 	store := newMockStore()
 	svc := NewService(store, nil, types.Namespace{})
 	log := zerolog.New(io.Discard)
-	return NewServer(svc, "us-east-1", log), store
+	return NewServer(svc, "us-east-1", "", "", log), store
+}
+
+func setupHTTPTestServerWithAuth(accessKeyID, secretAccessKey string) (*Server, *mockStore) {
+	store := newMockStore()
+	svc := NewService(store, nil, types.Namespace{})
+	log := zerolog.New(io.Discard)
+	return NewServer(svc, "us-east-1", accessKeyID, secretAccessKey, log), store
 }
 
 func TestServer_ListBuckets(t *testing.T) {
@@ -276,5 +288,89 @@ func TestServer_URLDecoding(t *testing.T) {
 	}
 	if rec2.Body.String() != "data" {
 		t.Errorf("expected body 'data', got: %s", rec2.Body.String())
+	}
+}
+
+func TestServer_AuthRejectsMissingAuthorization(t *testing.T) {
+	server, _ := setupHTTPTestServerWithAuth("app-key", "app-secret")
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "<Code>AccessDenied</Code>") {
+		t.Fatalf("expected AccessDenied error, got: %s", rec.Body.String())
+	}
+}
+
+func TestServer_AuthAcceptsSignedRequest(t *testing.T) {
+	server, store := setupHTTPTestServerWithAuth("app-key", "app-secret")
+	_ = store.PutBucket(context.Background(), "bucket1")
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	signRequest(t, req, nil, "app-key", "app-secret", "us-east-1")
+
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestServer_AuthRejectsWrongSecret(t *testing.T) {
+	server, store := setupHTTPTestServerWithAuth("app-key", "app-secret")
+	_ = store.PutBucket(context.Background(), "bucket1")
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	signRequest(t, req, nil, "app-key", "wrong-secret", "us-east-1")
+
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "<Code>SignatureDoesNotMatch</Code>") {
+		t.Fatalf("expected SignatureDoesNotMatch error, got: %s", rec.Body.String())
+	}
+}
+
+func signRequest(t *testing.T, req *http.Request, body []byte, accessKeyID, secretAccessKey, region string) {
+	t.Helper()
+
+	if body != nil {
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		req.ContentLength = int64(len(body))
+	}
+
+	payloadHash := emptyPayloadSHA256
+	if body != nil {
+		sum := sha256.Sum256(body)
+		payloadHash = hex.EncodeToString(sum[:])
+	}
+
+	signer := v4.NewSigner()
+	err := signer.SignHTTP(
+		context.Background(),
+		aws.Credentials{
+			AccessKeyID:     accessKeyID,
+			SecretAccessKey: secretAccessKey,
+		},
+		req,
+		payloadHash,
+		"s3",
+		region,
+		time.Unix(1_700_000_000, 0).UTC(),
+	)
+	if err != nil {
+		t.Fatalf("SignHTTP: %v", err)
+	}
+
+	if body != nil {
+		req.Body = io.NopCloser(bytes.NewReader(body))
 	}
 }

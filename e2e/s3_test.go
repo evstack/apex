@@ -25,6 +25,8 @@ func TestS3ObjectLifecycle(t *testing.T) {
 	namespace := testNamespace(t, []byte("apex-s3"))
 	data := []byte("apex s3 e2e")
 	commitment := mustBlobCommitment(t, namespace, data)
+	accessKeyID := "settings-key"
+	secretKey := "settings-secret"
 
 	apexBinary := buildApexBinary(t)
 	apexRPCAddr := reserveTCPAddr(t)
@@ -44,6 +46,8 @@ func TestS3ObjectLifecycle(t *testing.T) {
 		S3ListenAddr:    apexS3Addr,
 		S3Region:        "us-east-1",
 		S3Namespace:     namespace,
+		S3AccessKeyID:   accessKeyID,
+		S3SecretKey:     secretKey,
 		GasPrice:        submissionGasPrice,
 		MaxGasPrice:     submissionGasPrice,
 		ConfirmTimeoutS: submissionConfirmTimeout,
@@ -55,7 +59,7 @@ func TestS3ObjectLifecycle(t *testing.T) {
 	waitForApexHTTP(t, proc, apexRPCAddr)
 	waitForS3HTTP(t, proc, apexS3Addr)
 
-	client := newS3Client(t, "http://"+apexS3Addr)
+	client := newS3Client(t, "http://"+apexS3Addr, accessKeyID, secretKey)
 
 	bucket := "apex-s3-e2e"
 	key := "hello.txt"
@@ -154,12 +158,12 @@ func TestS3ObjectLifecycle(t *testing.T) {
 	}
 }
 
-func newS3Client(t *testing.T, endpoint string) *awss3.Client {
+func newS3Client(t *testing.T, endpoint, accessKeyID, secretKey string) *awss3.Client {
 	t.Helper()
 
 	cfg, err := awsconfig.LoadDefaultConfig(context.Background(),
 		awsconfig.WithRegion("us-east-1"),
-		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("apex", "apex", "")),
+		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKeyID, secretKey, "")),
 	)
 	if err != nil {
 		t.Fatalf("load AWS config: %v", err)

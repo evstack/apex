@@ -104,6 +104,9 @@ s3:
   region: "us-east-1"
   # Namespace used when S3 uploads are submitted to Celestia.
   namespace: ""
+  # Optional SigV4 credentials enforced by the S3 API.
+  access_key_id: ""
+  secret_access_key: ""
 
 rpc:
   # Address for the JSON-RPC API server (HTTP/WebSocket)
@@ -398,8 +401,13 @@ func validateS3API(s3cfg *S3APIConfig, storage *StorageConfig, submission *Submi
 	s3cfg.ListenAddr = strings.TrimSpace(s3cfg.ListenAddr)
 	s3cfg.Region = strings.TrimSpace(s3cfg.Region)
 	s3cfg.Namespace = strings.TrimSpace(s3cfg.Namespace)
+	s3cfg.AccessKeyID = strings.TrimSpace(s3cfg.AccessKeyID)
+	s3cfg.SecretAccessKey = strings.TrimSpace(s3cfg.SecretAccessKey)
 	if s3cfg.Region == "" {
 		s3cfg.Region = DefaultConfig().S3.Region
+	}
+	if (s3cfg.AccessKeyID == "") != (s3cfg.SecretAccessKey == "") {
+		return errors.New("s3.access_key_id and s3.secret_access_key must be provided together")
 	}
 	if !s3cfg.Enabled {
 		return nil

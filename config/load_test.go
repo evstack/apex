@@ -467,3 +467,38 @@ log:
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestLoadRejectsPartialS3Credentials(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	content := `
+data_source:
+  type: "node"
+  celestia_node_url: "http://localhost:26658"
+
+storage:
+  type: "sqlite"
+  db_path: "apex.db"
+
+s3:
+  enabled: true
+  listen_addr: ":8333"
+  access_key_id: "app-key"
+
+log:
+  level: "info"
+  format: "json"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected validation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "s3.access_key_id and s3.secret_access_key must be provided together") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

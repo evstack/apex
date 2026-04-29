@@ -236,7 +236,7 @@ func setupS3Server(cfg *config.Config, db store.Store, blobSubmitter submit.Subm
 
 	objStore := store.NewObjectStore(sqliteDB, ns)
 	s3Svc := apexs3.NewService(objStore, blobSubmitter, ns)
-	s3Srv := apexs3.NewServer(s3Svc, cfg.S3.Region, log)
+	s3Srv := apexs3.NewServer(s3Svc, cfg.S3.Region, cfg.S3.AccessKeyID, cfg.S3.SecretAccessKey, log)
 
 	httpSrv := &http.Server{
 		Addr:              cfg.S3.ListenAddr,

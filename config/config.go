@@ -97,10 +97,12 @@ type LogConfig struct {
 
 // S3APIConfig configures the S3-compatible API server.
 type S3APIConfig struct {
-	Enabled    bool   `yaml:"enabled"`
-	ListenAddr string `yaml:"listen_addr"`
-	Region     string `yaml:"region"`
-	Namespace  string `yaml:"namespace"` // Celestia namespace for S3 objects (hex)
+	Enabled         bool   `yaml:"enabled"`
+	ListenAddr      string `yaml:"listen_addr"`
+	Region          string `yaml:"region"`
+	Namespace       string `yaml:"namespace"`         // Celestia namespace for S3 objects (hex)
+	AccessKeyID     string `yaml:"access_key_id"`     // optional SigV4 access key for the S3 API
+	SecretAccessKey string `yaml:"secret_access_key"` // optional SigV4 secret key for the S3 API
 }
 
 // SubmissionConfig contains settings for the future blob submission pipeline.

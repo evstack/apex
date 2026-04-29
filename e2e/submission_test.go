@@ -121,6 +121,8 @@ type apexConfig struct {
 	S3ListenAddr    string
 	S3Region        string
 	S3Namespace     []byte
+	S3AccessKeyID   string
+	S3SecretKey     string
 	GasPrice        float64
 	MaxGasPrice     float64
 	ConfirmTimeoutS int
@@ -245,6 +247,8 @@ s3:
   listen_addr: "%s"
   region: "%s"
   namespace: "%s"
+  access_key_id: "%s"
+  secret_access_key: "%s"
 
 rpc:
   listen_addr: "%s"
@@ -284,6 +288,8 @@ log:
 		cfg.S3ListenAddr,
 		s3Region,
 		hex.EncodeToString(cfg.S3Namespace),
+		cfg.S3AccessKeyID,
+		cfg.S3SecretKey,
 		cfg.RPCListenAddr,
 		cfg.GRPCListenAddr,
 	)

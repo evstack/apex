@@ -55,7 +55,7 @@ func setupIntegrationServer(t *testing.T) *httptest.Server {
 	sub := &mockBlobSubmitter{}
 	svc := apexs3.NewService(objStore, sub, testNamespace())
 	log := zerolog.New(io.Discard)
-	srv := apexs3.NewServer(svc, "us-east-1", log)
+	srv := apexs3.NewServer(svc, "us-east-1", "", "", log)
 
 	return httptest.NewServer(srv)
 }

@@ -159,9 +159,28 @@ func testNamespace() types.Namespace {
 	return ns
 }
 
-func TestService_CreateBucket(t *testing.T) {
+func TestService_ReadOnly(t *testing.T) {
 	store := newMockStore()
 	svc := NewService(store, nil, types.Namespace{})
+	ctx := context.Background()
+
+	if err := svc.CreateBucket(ctx, "b"); !errors.Is(err, ErrReadOnly) {
+		t.Errorf("CreateBucket: expected ErrReadOnly, got %v", err)
+	}
+	if err := svc.DeleteBucket(ctx, "b"); !errors.Is(err, ErrReadOnly) {
+		t.Errorf("DeleteBucket: expected ErrReadOnly, got %v", err)
+	}
+	if _, err := svc.PutObject(ctx, "b", "k", bytes.NewReader([]byte("x")), "text/plain"); !errors.Is(err, ErrReadOnly) {
+		t.Errorf("PutObject: expected ErrReadOnly, got %v", err)
+	}
+	if err := svc.DeleteObject(ctx, "b", "k"); !errors.Is(err, ErrReadOnly) {
+		t.Errorf("DeleteObject: expected ErrReadOnly, got %v", err)
+	}
+}
+
+func TestService_CreateBucket(t *testing.T) {
+	store := newMockStore()
+	svc := NewService(store, &mockSubmitter{}, types.Namespace{})
 
 	ctx := context.Background()
 	if err := svc.CreateBucket(ctx, "test-bucket"); err != nil {
@@ -176,7 +195,7 @@ func TestService_CreateBucket(t *testing.T) {
 
 func TestService_PutGetObject(t *testing.T) {
 	store := newMockStore()
-	svc := NewService(store, nil, types.Namespace{})
+	svc := NewService(store, &mockSubmitter{}, testNamespace())
 
 	ctx := context.Background()
 	if err := svc.CreateBucket(ctx, "test-bucket"); err != nil {
@@ -285,15 +304,10 @@ func TestService_PutObject_EmptySkipsSubmission(t *testing.T) {
 
 func TestService_PutObject_TooLarge(t *testing.T) {
 	store := newMockStore()
-	svc := NewService(store, nil, types.Namespace{})
-
-	ctx := context.Background()
-	if err := svc.CreateBucket(ctx, "test-bucket"); err != nil {
-		t.Fatalf("CreateBucket failed: %v", err)
-	}
+	svc := NewService(store, &mockSubmitter{}, types.Namespace{})
 
 	bigData := make([]byte, maxObjectSize+1)
-	_, err := svc.PutObject(ctx, "test-bucket", "big", bytes.NewReader(bigData), "application/octet-stream")
+	_, err := svc.PutObject(context.Background(), "any-bucket", "big", bytes.NewReader(bigData), "application/octet-stream")
 	if !errors.Is(err, ErrObjectTooLarge) {
 		t.Fatalf("expected ErrObjectTooLarge, got: %v", err)
 	}
@@ -301,7 +315,7 @@ func TestService_PutObject_TooLarge(t *testing.T) {
 
 func TestService_DeleteObject(t *testing.T) {
 	store := newMockStore()
-	svc := NewService(store, nil, types.Namespace{})
+	svc := NewService(store, &mockSubmitter{}, testNamespace())
 
 	ctx := context.Background()
 	if err := svc.CreateBucket(ctx, "test-bucket"); err != nil {
@@ -324,7 +338,7 @@ func TestService_DeleteObject(t *testing.T) {
 
 func TestService_ListBuckets(t *testing.T) {
 	store := newMockStore()
-	svc := NewService(store, nil, types.Namespace{})
+	svc := NewService(store, &mockSubmitter{}, types.Namespace{})
 
 	ctx := context.Background()
 	buckets, err := svc.ListBuckets(ctx)
@@ -349,7 +363,7 @@ func TestService_ListBuckets(t *testing.T) {
 
 func TestService_HeadObject(t *testing.T) {
 	store := newMockStore()
-	svc := NewService(store, nil, types.Namespace{})
+	svc := NewService(store, &mockSubmitter{}, testNamespace())
 
 	ctx := context.Background()
 	_ = svc.CreateBucket(ctx, "test-bucket")

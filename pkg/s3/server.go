@@ -58,7 +58,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if query.Get("list-type") != "" || query.Has("prefix") || query.Has("delimiter") {
 			s.handleListObjects(r, w, bucket)
 		} else if r.Method == http.MethodGet {
-			s.handleBucket(r, w, bucket)
+			s.handleListObjects(r, w, bucket)
 		} else if r.Method == http.MethodPut {
 			s.handleCreateBucket(r, w, bucket)
 		} else if r.Method == http.MethodDelete {
@@ -131,14 +131,6 @@ func (s *Server) handleService(r *http.Request, w http.ResponseWriter) {
 	s.writeXML(w, result)
 }
 
-func (s *Server) handleBucket(r *http.Request, w http.ResponseWriter, bucket string) {
-	if r.Method != http.MethodGet {
-		s.writeError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "")
-		return
-	}
-	s.handleListObjects(r, w, bucket)
-}
-
 func (s *Server) handleListObjects(r *http.Request, w http.ResponseWriter, bucket string) {
 	query := r.URL.Query()
 	prefix := query.Get("prefix")
@@ -147,7 +139,7 @@ func (s *Server) handleListObjects(r *http.Request, w http.ResponseWriter, bucke
 	maxKeys := 1000
 	if mk := query.Get("max-keys"); mk != "" {
 		if n, err := strconv.Atoi(mk); err == nil && n > 0 {
-			maxKeys = n
+			maxKeys = min(n, 1000)
 		}
 	}
 
@@ -290,6 +282,7 @@ func (s *Server) handlePutObject(r *http.Request, w http.ResponseWriter, bucket,
 		contentType = defaultContentType
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxObjectSize+1)
 	obj, err := s.svc.PutObject(r.Context(), bucket, key, r.Body, contentType)
 	if err != nil {
 		s.writeS3Error(w, err)

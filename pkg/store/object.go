@@ -155,10 +155,10 @@ func (o *ObjectStore) GetObject(ctx context.Context, bucket, key string) (*s3.Ob
 	var commitmentsJSON string
 
 	err := o.reader.QueryRowContext(ctx,
-		`SELECT key, bucket, size, etag, content_type, last_modified, height, namespace, commitments, data
+		`SELECT key, bucket, size, etag, content_type, last_modified, height, commitments, data
 		 FROM s3_objects WHERE bucket = ? AND key = ?`,
 		bucket, key).Scan(&obj.Key, &obj.Bucket, &obj.Size, &obj.ETag, &obj.ContentType,
-		&lastModified, &obj.Height, &obj.Namespace, &commitmentsJSON, &data)
+		&lastModified, &obj.Height, &commitmentsJSON, &data)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil, s3.ErrObjectNotFound
@@ -166,6 +166,7 @@ func (o *ObjectStore) GetObject(ctx context.Context, bucket, key string) (*s3.Ob
 		return nil, nil, fmt.Errorf("query object: %w", err)
 	}
 	obj.LastModified = time.Unix(0, lastModified)
+	obj.Namespace = o.ns.String()
 	if commitmentsJSON != "" && commitmentsJSON != "null" {
 		_ = json.Unmarshal([]byte(commitmentsJSON), &obj.Commitments)
 	}
@@ -195,8 +196,8 @@ func (o *ObjectStore) ListObjects(ctx context.Context, bucket, prefix, delimiter
 	args := []any{bucket}
 
 	if prefix != "" {
-		query += ` AND key LIKE ?`
-		args = append(args, prefix+"%")
+		query += ` AND key LIKE ? ESCAPE '\'`
+		args = append(args, escapeLIKE(prefix)+"%")
 	}
 	if marker != "" {
 		query += ` AND key > ?`
@@ -289,4 +290,13 @@ func isSQLiteUniqueConstraint(err error) bool {
 func computeETag(data []byte) string {
 	h := md5.Sum(data) //nolint:gosec // MD5 required by S3 protocol
 	return hex.EncodeToString(h[:])
+}
+
+// escapeLIKE escapes SQLite LIKE wildcard characters in s so the value is
+// treated as a literal prefix rather than a pattern.
+func escapeLIKE(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/evstack/apex/pkg/submit"
 	"github.com/evstack/apex/pkg/types"
@@ -81,6 +82,10 @@ func (s *Service) PutObject(ctx context.Context, bucket, key string, r io.Reader
 
 	data, err := io.ReadAll(r)
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return nil, ErrObjectTooLarge
+		}
 		return nil, fmt.Errorf("read object data: %w", err)
 	}
 	if len(data) > maxObjectSize {

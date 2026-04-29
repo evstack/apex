@@ -14,20 +14,19 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
-	"github.com/evstack/apex/pkg/types"
 	"github.com/rs/zerolog"
 )
 
 func setupHTTPTestServer() (*Server, *mockStore) {
 	store := newMockStore()
-	svc := NewService(store, nil, types.Namespace{})
+	svc := NewService(store, &mockSubmitter{}, testNamespace())
 	log := zerolog.New(io.Discard)
 	return NewServer(svc, "us-east-1", "", "", log), store
 }
 
 func setupHTTPTestServerWithAuth(accessKeyID, secretAccessKey string) (*Server, *mockStore) {
 	store := newMockStore()
-	svc := NewService(store, nil, types.Namespace{})
+	svc := NewService(store, &mockSubmitter{}, testNamespace())
 	log := zerolog.New(io.Discard)
 	return NewServer(svc, "us-east-1", accessKeyID, secretAccessKey, log), store
 }
@@ -364,7 +363,7 @@ func signRequest(t *testing.T, req *http.Request, body []byte, accessKeyID, secr
 		payloadHash,
 		"s3",
 		region,
-		time.Unix(1_700_000_000, 0).UTC(),
+		time.Now().UTC(),
 	)
 	if err != nil {
 		t.Fatalf("SignHTTP: %v", err)

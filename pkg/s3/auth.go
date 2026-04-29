@@ -75,8 +75,12 @@ func (s *Server) authenticateRequest(r *http.Request) *authError {
 	if amzDate == "" {
 		return &authError{code: "AccessDenied", message: "missing X-Amz-Date header"}
 	}
-	if _, err := time.Parse("20060102T150405Z", amzDate); err != nil {
+	t, err := time.Parse("20060102T150405Z", amzDate)
+	if err != nil {
 		return &authError{code: "AccessDenied", message: "invalid X-Amz-Date header"}
+	}
+	if skew := time.Since(t); skew > 15*time.Minute || skew < -15*time.Minute {
+		return &authError{code: "RequestTimeTooSkewed", message: "The difference between the request time and the current time is too large."}
 	}
 
 	payloadHash := strings.TrimSpace(r.Header.Get("X-Amz-Content-Sha256"))

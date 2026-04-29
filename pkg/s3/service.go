@@ -73,7 +73,10 @@ func (s *Service) HeadBucket(ctx context.Context, name string) (*Bucket, error) 
 	return s.store.GetBucket(ctx, name)
 }
 
-// PutObject submits blob to Celestia then stores object in SQLite.
+// PutObject stores an object. Non-empty objects are submitted to Celestia
+// first and stored only on success. Empty objects (0 bytes) are stored
+// locally without Celestia submission to preserve S3 tool compatibility
+// (e.g. folder placeholder keys); they will have Height=0 and no commitments.
 // Returns ErrReadOnly if no submitter is configured.
 func (s *Service) PutObject(ctx context.Context, bucket, key string, r io.Reader, contentType string) (*Object, error) {
 	if s.submitter == nil {

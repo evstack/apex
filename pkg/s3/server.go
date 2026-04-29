@@ -340,6 +340,8 @@ func (s *Server) writeXML(w http.ResponseWriter, data any) {
 
 func (s *Server) writeS3Error(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrReadOnly):
+		s.writeError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", err.Error())
 	case errors.Is(err, ErrBucketNotFound):
 		s.writeError(w, http.StatusNotFound, "NoSuchBucket", "The specified bucket does not exist")
 	case errors.Is(err, ErrBucketNotEmpty):

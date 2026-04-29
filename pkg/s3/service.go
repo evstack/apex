@@ -17,6 +17,7 @@ var (
 	ErrBucketAlreadyExists = errors.New("bucket already exists")
 	ErrObjectNotFound      = errors.New("object not found")
 	ErrObjectTooLarge      = errors.New("object too large")
+	ErrReadOnly            = errors.New("S3 API is read-only: submission is not configured")
 )
 
 // ObjectStore is the persistence interface for S3 buckets and objects.
@@ -50,10 +51,16 @@ func NewService(store ObjectStore, submitter submit.Submitter, namespace types.N
 }
 
 func (s *Service) CreateBucket(ctx context.Context, name string) error {
+	if s.submitter == nil {
+		return ErrReadOnly
+	}
 	return s.store.PutBucket(ctx, name)
 }
 
 func (s *Service) DeleteBucket(ctx context.Context, name string) error {
+	if s.submitter == nil {
+		return ErrReadOnly
+	}
 	return s.store.DeleteBucket(ctx, name)
 }
 
@@ -65,10 +72,13 @@ func (s *Service) HeadBucket(ctx context.Context, name string) (*Bucket, error) 
 	return s.store.GetBucket(ctx, name)
 }
 
-// PutObject stores an object. If a submitter is configured, the blob is
-// submitted to Celestia first; the SQLite write only happens on success.
-// Empty objects (0 bytes) skip Celestia submission.
+// PutObject submits blob to Celestia then stores object in SQLite.
+// Returns ErrReadOnly if no submitter is configured.
 func (s *Service) PutObject(ctx context.Context, bucket, key string, r io.Reader, contentType string) (*Object, error) {
+	if s.submitter == nil {
+		return nil, ErrReadOnly
+	}
+
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("read object data: %w", err)
@@ -80,8 +90,7 @@ func (s *Service) PutObject(ctx context.Context, bucket, key string, r io.Reader
 	var height uint64
 	var commitments []string
 
-	// Submit to Celestia first (if submitter configured and data non-empty).
-	if s.submitter != nil && len(data) > 0 {
+	if len(data) > 0 {
 		blob, err := submit.BuildBlob(s.namespace, data, 0, nil)
 		if err != nil {
 			return nil, fmt.Errorf("build blob: %w", err)
@@ -110,6 +119,9 @@ func (s *Service) GetObject(ctx context.Context, bucket, key string) (*Object, [
 }
 
 func (s *Service) DeleteObject(ctx context.Context, bucket, key string) error {
+	if s.submitter == nil {
+		return ErrReadOnly
+	}
 	return s.store.DeleteObject(ctx, bucket, key)
 }
 

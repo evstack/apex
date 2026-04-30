@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS s3_buckets (
 );
 
 CREATE TABLE IF NOT EXISTS s3_objects (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    id            INTEGER PRIMARY KEY,
     bucket        TEXT NOT NULL,
     key           TEXT NOT NULL,
     size          INTEGER NOT NULL,
@@ -15,10 +15,10 @@ CREATE TABLE IF NOT EXISTS s3_objects (
     height        INTEGER NOT NULL DEFAULT 0,
     namespace     TEXT NOT NULL DEFAULT '',
     commitments   TEXT NOT NULL DEFAULT '[]',
+    sha256        TEXT NOT NULL DEFAULT '',
     data          BLOB,
     UNIQUE(bucket, key),
     FOREIGN KEY (bucket) REFERENCES s3_buckets(name) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_s3_objects_bucket ON s3_objects(bucket);
 CREATE INDEX IF NOT EXISTS idx_s3_objects_bucket_key ON s3_objects(bucket, key);

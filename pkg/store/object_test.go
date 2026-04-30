@@ -73,7 +73,7 @@ func TestObjectStore_ObjectCRUD(t *testing.T) {
 
 	// Put object.
 	data := []byte("hello celestia")
-	obj, err := store.PutObject(ctx, "bucket", "greeting.txt", data, "text/plain", 42, []string{"abc123"})
+	obj, err := store.PutObject(ctx, "bucket", "greeting.txt", data, "text/plain", "sha256-greeting", 42, []string{"abc123"})
 	if err != nil {
 		t.Fatalf("PutObject: %v", err)
 	}
@@ -97,6 +97,9 @@ func TestObjectStore_ObjectCRUD(t *testing.T) {
 	}
 	if len(gotObj.Commitments) != 1 || gotObj.Commitments[0] != "abc123" {
 		t.Errorf("expected commitments [abc123], got %v", gotObj.Commitments)
+	}
+	if gotObj.SHA256 != "sha256-greeting" {
+		t.Errorf("expected SHA256 'sha256-greeting', got %q", gotObj.SHA256)
 	}
 
 	// Head object.
@@ -125,12 +128,12 @@ func TestObjectStore_ObjectUpsert(t *testing.T) {
 
 	_ = store.PutBucket(ctx, "bucket")
 
-	_, err := store.PutObject(ctx, "bucket", "key", []byte("v1"), "text/plain", 0, nil)
+	_, err := store.PutObject(ctx, "bucket", "key", []byte("v1"), "text/plain", "", 0, nil)
 	if err != nil {
 		t.Fatalf("PutObject v1: %v", err)
 	}
 
-	_, err = store.PutObject(ctx, "bucket", "key", []byte("v2-updated"), "text/plain", 100, []string{"commit2"})
+	_, err = store.PutObject(ctx, "bucket", "key", []byte("v2-updated"), "text/plain", "", 100, []string{"commit2"})
 	if err != nil {
 		t.Fatalf("PutObject v2: %v", err)
 	}
@@ -149,9 +152,9 @@ func TestObjectStore_ListObjects_PrefixAndPagination(t *testing.T) {
 	ctx := context.Background()
 
 	_ = store.PutBucket(ctx, "bucket")
-	_, _ = store.PutObject(ctx, "bucket", "docs/a.txt", []byte("a"), "text/plain", 0, nil)
-	_, _ = store.PutObject(ctx, "bucket", "docs/b.txt", []byte("b"), "text/plain", 0, nil)
-	_, _ = store.PutObject(ctx, "bucket", "images/cat.png", []byte("c"), "image/png", 0, nil)
+	_, _ = store.PutObject(ctx, "bucket", "docs/a.txt", []byte("a"), "text/plain", "", 0, nil)
+	_, _ = store.PutObject(ctx, "bucket", "docs/b.txt", []byte("b"), "text/plain", "", 0, nil)
+	_, _ = store.PutObject(ctx, "bucket", "images/cat.png", []byte("c"), "image/png", "", 0, nil)
 
 	// List with prefix.
 	result, err := store.ListObjects(ctx, "bucket", "docs/", "", "", 10)
@@ -183,9 +186,9 @@ func TestObjectStore_ListObjects_Delimiter(t *testing.T) {
 	ctx := context.Background()
 
 	_ = store.PutBucket(ctx, "bucket")
-	_, _ = store.PutObject(ctx, "bucket", "photos/2024/jan.jpg", []byte("j"), "image/jpeg", 0, nil)
-	_, _ = store.PutObject(ctx, "bucket", "photos/2024/feb.jpg", []byte("f"), "image/jpeg", 0, nil)
-	_, _ = store.PutObject(ctx, "bucket", "photos/2025/mar.jpg", []byte("m"), "image/jpeg", 0, nil)
+	_, _ = store.PutObject(ctx, "bucket", "photos/2024/jan.jpg", []byte("j"), "image/jpeg", "", 0, nil)
+	_, _ = store.PutObject(ctx, "bucket", "photos/2024/feb.jpg", []byte("f"), "image/jpeg", "", 0, nil)
+	_, _ = store.PutObject(ctx, "bucket", "photos/2025/mar.jpg", []byte("m"), "image/jpeg", "", 0, nil)
 
 	result, err := store.ListObjects(ctx, "bucket", "photos/", "/", "", 100)
 	if err != nil {
@@ -206,7 +209,7 @@ func TestObjectStore_DeleteBucket_NotEmpty(t *testing.T) {
 	ctx := context.Background()
 
 	_ = store.PutBucket(ctx, "bucket")
-	_, _ = store.PutObject(ctx, "bucket", "key", []byte("data"), "text/plain", 0, nil)
+	_, _ = store.PutObject(ctx, "bucket", "key", []byte("data"), "text/plain", "", 0, nil)
 
 	err := store.DeleteBucket(ctx, "bucket")
 	if !errors.Is(err, s3.ErrBucketNotEmpty) {
@@ -236,9 +239,9 @@ func TestObjectStore_ListObjects_DelimiterPagination(t *testing.T) {
 	if err := store.PutBucket(ctx, "bucket"); err != nil {
 		t.Fatalf("PutBucket: %v", err)
 	}
-	_, _ = store.PutObject(ctx, "bucket", "photos/2024/jan.jpg", []byte("j"), "image/jpeg", 0, nil)
-	_, _ = store.PutObject(ctx, "bucket", "photos/2024/feb.jpg", []byte("f"), "image/jpeg", 0, nil)
-	_, _ = store.PutObject(ctx, "bucket", "photos/2025/mar.jpg", []byte("m"), "image/jpeg", 0, nil)
+	_, _ = store.PutObject(ctx, "bucket", "photos/2024/jan.jpg", []byte("j"), "image/jpeg", "", 0, nil)
+	_, _ = store.PutObject(ctx, "bucket", "photos/2024/feb.jpg", []byte("f"), "image/jpeg", "", 0, nil)
+	_, _ = store.PutObject(ctx, "bucket", "photos/2025/mar.jpg", []byte("m"), "image/jpeg", "", 0, nil)
 
 	page1, err := store.ListObjects(ctx, "bucket", "photos/", "/", "", 1)
 	if err != nil {

@@ -2,7 +2,10 @@ package s3
 
 import (
 	"context"
+	"crypto/md5" //nolint:gosec // MD5 required by S3 protocol for ETag
+	sha256pkg "crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -31,7 +34,7 @@ type ObjectStore interface {
 	DeleteBucket(ctx context.Context, name string) error
 	ListBuckets(ctx context.Context) ([]Bucket, error)
 
-	PutObject(ctx context.Context, bucket, key string, data []byte, contentType string, height uint64, commitments []string) (*Object, error)
+	PutObject(ctx context.Context, bucket, key string, data []byte, contentType string, sha256 string, height uint64, commitments []string) (*Object, error)
 	GetObject(ctx context.Context, bucket, key string) (*Object, []byte, error)
 	DeleteObject(ctx context.Context, bucket, key string) error
 	ListObjects(ctx context.Context, bucket, prefix, delimiter, marker string, maxKeys int) (*ListObjectsResult, error)
@@ -106,9 +109,30 @@ func (s *Service) PutObject(ctx context.Context, bucket, key string, r io.Reader
 
 	var height uint64
 	var commitments []string
+	var sha256Hex string
 
 	if len(data) > 0 {
-		blob, err := submit.BuildBlob(s.namespace, data, 0, nil)
+		sum := sha256pkg.Sum256(data)
+		sha256Hex = hex.EncodeToString(sum[:])
+
+		md5sum := md5.Sum(data) //nolint:gosec // MD5 required by S3 protocol for ETag
+		etag := hex.EncodeToString(md5sum[:])
+
+		envelope := CommitmentEnvelope{
+			Version:     1,
+			Bucket:      bucket,
+			Key:         key,
+			ContentType: contentType,
+			Size:        int64(len(data)),
+			SHA256:      sha256Hex,
+			ETag:        etag,
+		}
+		envelopeBytes, err := json.Marshal(envelope)
+		if err != nil {
+			return nil, fmt.Errorf("marshal commitment envelope: %w", err)
+		}
+
+		blob, err := submit.BuildBlob(s.namespace, envelopeBytes, 0, nil)
 		if err != nil {
 			return nil, fmt.Errorf("build blob: %w", err)
 		}
@@ -123,7 +147,7 @@ func (s *Service) PutObject(ctx context.Context, bucket, key string, r io.Reader
 	}
 
 	// Write to store only after successful Celestia submission.
-	obj, err := s.store.PutObject(ctx, bucket, key, data, contentType, height, commitments)
+	obj, err := s.store.PutObject(ctx, bucket, key, data, contentType, sha256Hex, height, commitments)
 	if err != nil {
 		return nil, err
 	}

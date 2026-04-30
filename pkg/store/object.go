@@ -111,7 +111,7 @@ func (o *ObjectStore) ListBuckets(ctx context.Context) ([]s3.Bucket, error) {
 	return buckets, rows.Err()
 }
 
-func (o *ObjectStore) PutObject(ctx context.Context, bucket, key string, data []byte, contentType string, height uint64, commitments []string) (*s3.Object, error) {
+func (o *ObjectStore) PutObject(ctx context.Context, bucket, key string, data []byte, contentType string, sha256 string, height uint64, commitments []string) (*s3.Object, error) {
 	etag := computeETag(data)
 	now := time.Now().UnixNano()
 	if commitments == nil {
@@ -120,8 +120,8 @@ func (o *ObjectStore) PutObject(ctx context.Context, bucket, key string, data []
 	commitmentsJSON, _ := json.Marshal(commitments)
 
 	_, err := o.writer.ExecContext(ctx,
-		`INSERT INTO s3_objects (bucket, key, size, etag, content_type, last_modified, height, namespace, commitments, data)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO s3_objects (bucket, key, size, etag, content_type, last_modified, height, namespace, commitments, sha256, data)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(bucket, key) DO UPDATE SET
 		   size = excluded.size,
 		   etag = excluded.etag,
@@ -129,8 +129,9 @@ func (o *ObjectStore) PutObject(ctx context.Context, bucket, key string, data []
 		   last_modified = excluded.last_modified,
 		   height = excluded.height,
 		   commitments = excluded.commitments,
+		   sha256 = excluded.sha256,
 		   data = excluded.data`,
-		bucket, key, len(data), etag, contentType, now, height, o.ns.String(), string(commitmentsJSON), data)
+		bucket, key, len(data), etag, contentType, now, height, o.ns.String(), string(commitmentsJSON), sha256, data)
 	if err != nil {
 		if isSQLiteFKConstraint(err) {
 			return nil, s3.ErrBucketNotFound
@@ -145,6 +146,7 @@ func (o *ObjectStore) PutObject(ctx context.Context, bucket, key string, data []
 		ETag:         etag,
 		ContentType:  contentType,
 		LastModified: time.Unix(0, now),
+		SHA256:       sha256,
 		Height:       height,
 		Namespace:    o.ns.String(),
 		Commitments:  commitments,
@@ -162,10 +164,10 @@ func (o *ObjectStore) GetObject(ctx context.Context, bucket, key string) (*s3.Ob
 	var commitmentsJSON string
 
 	err := o.reader.QueryRowContext(ctx,
-		`SELECT key, bucket, size, etag, content_type, last_modified, height, commitments, data
+		`SELECT key, bucket, size, etag, content_type, last_modified, height, commitments, sha256, data
 		 FROM s3_objects WHERE bucket = ? AND key = ?`,
 		bucket, key).Scan(&obj.Key, &obj.Bucket, &obj.Size, &obj.ETag, &obj.ContentType,
-		&lastModified, &obj.Height, &commitmentsJSON, &data)
+		&lastModified, &obj.Height, &commitmentsJSON, &obj.SHA256, &data)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil, s3.ErrObjectNotFound

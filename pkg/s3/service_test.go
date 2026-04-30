@@ -3,7 +3,9 @@ package s3
 import (
 	"bytes"
 	"context"
+	sha256pkg "crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -69,7 +71,7 @@ func (m *mockStore) ListBuckets(_ context.Context) ([]Bucket, error) {
 	return result, nil
 }
 
-func (m *mockStore) PutObject(_ context.Context, bucket, key string, data []byte, contentType string, height uint64, commitments []string) (*Object, error) {
+func (m *mockStore) PutObject(_ context.Context, bucket, key string, data []byte, contentType string, sha256 string, height uint64, commitments []string) (*Object, error) {
 	if _, ok := m.buckets[bucket]; !ok {
 		return nil, ErrBucketNotFound
 	}
@@ -81,6 +83,7 @@ func (m *mockStore) PutObject(_ context.Context, bucket, key string, data []byte
 		ETag:         "etag-" + key,
 		ContentType:  contentType,
 		LastModified: now,
+		SHA256:       sha256,
 		Height:       height,
 		Commitments:  commitments,
 	}
@@ -292,11 +295,42 @@ func TestService_PutObject_WithSubmitter(t *testing.T) {
 	if sub.lastReq == nil || len(sub.lastReq.Blobs) != 1 {
 		t.Fatalf("expected a single submitted blob, got %#v", sub.lastReq)
 	}
-	if got := sub.lastReq.Blobs[0]; !bytes.Equal(got.Data, data) {
-		t.Fatalf("submitted data = %q, want %q", got.Data, data)
+	// Submitted blob must be a CommitmentEnvelope, not raw data.
+	var env CommitmentEnvelope
+	if err := json.Unmarshal(sub.lastReq.Blobs[0].Data, &env); err != nil {
+		t.Fatalf("submitted blob is not a CommitmentEnvelope: %v", err)
+	}
+	if env.Bucket != "test-bucket" || env.Key != "key1" || env.Size != int64(len(data)) {
+		t.Errorf("envelope mismatch: bucket=%s key=%s size=%d", env.Bucket, env.Key, env.Size)
+	}
+	wantSHA256 := hex.EncodeToString(func() []byte { s := sha256pkg.Sum256(data); return s[:] }())
+	if env.SHA256 != wantSHA256 {
+		t.Errorf("envelope SHA256 = %s, want %s", env.SHA256, wantSHA256)
 	}
 	if len(obj.Commitments) != 1 || obj.Commitments[0] != hex.EncodeToString(sub.lastReq.Blobs[0].Commitment) {
 		t.Fatalf("commitments = %v, want [%s]", obj.Commitments, hex.EncodeToString(sub.lastReq.Blobs[0].Commitment))
+	}
+}
+
+func TestService_PutObject_SHA256Verification(t *testing.T) {
+	store := newMockStore()
+	svc := NewService(store, &mockSubmitter{}, testNamespace())
+
+	ctx := context.Background()
+	if err := svc.CreateBucket(ctx, "test-bucket"); err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
+
+	data := []byte("verify me")
+	obj, err := svc.PutObject(ctx, "test-bucket", "key", bytes.NewReader(data), "text/plain")
+	if err != nil {
+		t.Fatalf("PutObject failed: %v", err)
+	}
+
+	sum := sha256pkg.Sum256(data)
+	want := hex.EncodeToString(sum[:])
+	if obj.SHA256 != want {
+		t.Errorf("obj.SHA256 = %s, want %s", obj.SHA256, want)
 	}
 }
 

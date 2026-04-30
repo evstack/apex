@@ -94,6 +94,9 @@ func (s *Service) PutObject(ctx context.Context, bucket, key string, r io.Reader
 	if len(key) > maxKeyLength {
 		return nil, ErrKeyTooLong
 	}
+	if _, err := s.store.GetBucket(ctx, bucket); err != nil {
+		return nil, err
+	}
 
 	data, err := io.ReadAll(r)
 	if err != nil {

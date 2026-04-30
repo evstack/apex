@@ -1,6 +1,7 @@
 package s3
 
 import (
+	"bytes"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -356,7 +357,24 @@ func (s *Server) handlePutObject(r *http.Request, w http.ResponseWriter, bucket,
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxObjectSize+1)
-	obj, err := s.svc.PutObject(r.Context(), bucket, key, r.Body, contentType)
+	body, err := readRequestBody(r)
+	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			s.writeError(w, http.StatusRequestEntityTooLarge, "EntityTooLarge", "Your proposed upload exceeds the maximum allowed size")
+			return
+		}
+		s.writeError(w, http.StatusInternalServerError, "InternalError", err.Error())
+		return
+	}
+	if s.auth != nil {
+		if authErr := validatePayloadHash(r, body); authErr != nil {
+			s.writeError(w, http.StatusForbidden, authErr.code, authErr.message)
+			return
+		}
+	}
+
+	obj, err := s.svc.PutObject(r.Context(), bucket, key, bytes.NewReader(body), contentType)
 	if err != nil {
 		s.writeS3Error(w, err)
 		return

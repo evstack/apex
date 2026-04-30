@@ -312,6 +312,20 @@ func TestService_PutObject_WithSubmitter(t *testing.T) {
 	}
 }
 
+func TestService_PutObject_MissingBucketDoesNotSubmit(t *testing.T) {
+	store := newMockStore()
+	sub := &mockSubmitter{}
+	svc := NewService(store, sub, testNamespace())
+
+	_, err := svc.PutObject(context.Background(), "missing-bucket", "key1", bytes.NewReader([]byte("data")), "text/plain")
+	if !errors.Is(err, ErrBucketNotFound) {
+		t.Fatalf("expected ErrBucketNotFound, got: %v", err)
+	}
+	if sub.calls != 0 {
+		t.Fatalf("expected no submit call for missing bucket, got %d", sub.calls)
+	}
+}
+
 func TestService_PutObject_SHA256Verification(t *testing.T) {
 	store := newMockStore()
 	svc := NewService(store, &mockSubmitter{}, testNamespace())
@@ -384,6 +398,9 @@ func TestService_PutObject_EmptySkipsSubmission(t *testing.T) {
 func TestService_PutObject_TooLarge(t *testing.T) {
 	store := newMockStore()
 	svc := NewService(store, &mockSubmitter{}, types.Namespace{})
+	if err := svc.CreateBucket(context.Background(), "any-bucket"); err != nil {
+		t.Fatalf("CreateBucket failed: %v", err)
+	}
 
 	bigData := make([]byte, maxObjectSize+1)
 	_, err := svc.PutObject(context.Background(), "any-bucket", "big", bytes.NewReader(bigData), "application/octet-stream")

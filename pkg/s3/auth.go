@@ -1,12 +1,14 @@
 package s3
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -137,6 +139,31 @@ func payloadHashFromRequest(r *http.Request) string {
 	return payloadHash
 }
 
+func validatePayloadHash(r *http.Request, body []byte) *authError {
+	payloadHash := payloadHashFromRequest(r)
+	sum := sha256.Sum256(body)
+	if subtle.ConstantTimeCompare([]byte(payloadHash), []byte(hex.EncodeToString(sum[:]))) == 1 {
+		return nil
+	}
+	return &authError{
+		code:    "XAmzContentSHA256Mismatch",
+		message: "The provided x-amz-content-sha256 header does not match the request payload.",
+	}
+}
+
+func readRequestBody(r *http.Request) ([]byte, error) {
+	if r.Body == nil {
+		return nil, nil
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	return body, nil
+}
+
 func parseAuthHeader(raw string) (*authHeader, error) {
 	if !strings.HasPrefix(raw, authorizationAlgorithm+" ") {
 		return nil, errors.New("unsupported authorization algorithm")
@@ -246,6 +273,12 @@ func canonicalHeaderValue(r *http.Request, name string) (string, bool) {
 			return "", false
 		}
 		return normalizeHeaderValue(r.Host), true
+	}
+	if name == "content-length" {
+		if r.ContentLength < 0 {
+			return "", false
+		}
+		return normalizeHeaderValue(fmt.Sprintf("%d", r.ContentLength)), true
 	}
 
 	values, ok := r.Header[http.CanonicalHeaderKey(name)]

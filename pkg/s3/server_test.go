@@ -338,6 +338,28 @@ func TestServer_AuthRejectsWrongSecret(t *testing.T) {
 	}
 }
 
+func TestServer_HandlePutObjectRejectsPayloadHashMismatch(t *testing.T) {
+	server, store := setupHTTPTestServerWithAuth("app-key", "app-secret")
+	_ = store.PutBucket(context.Background(), "bucket1")
+
+	signedBody := []byte("hello world")
+	tamperedBody := []byte("jello world")
+	req := httptest.NewRequest(http.MethodPut, "/bucket1/hello.txt", bytes.NewReader(tamperedBody))
+	req.Header.Set("Content-Type", "text/plain")
+	sum := sha256.Sum256(signedBody)
+	req.Header.Set("X-Amz-Content-Sha256", hex.EncodeToString(sum[:]))
+
+	rec := httptest.NewRecorder()
+	server.handlePutObject(req, rec, "bucket1", "hello.txt")
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "<Code>XAmzContentSHA256Mismatch</Code>") {
+		t.Fatalf("expected XAmzContentSHA256Mismatch error, got: %s", rec.Body.String())
+	}
+}
+
 func signRequest(t *testing.T, req *http.Request, body []byte, accessKeyID, secretAccessKey, region string) {
 	t.Helper()
 

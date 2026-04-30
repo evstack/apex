@@ -152,6 +152,10 @@ func (o *ObjectStore) PutObject(ctx context.Context, bucket, key string, data []
 }
 
 func (o *ObjectStore) GetObject(ctx context.Context, bucket, key string) (*s3.Object, []byte, error) {
+	if err := o.ensureBucketExists(ctx, bucket); err != nil {
+		return nil, nil, err
+	}
+
 	var obj s3.Object
 	var lastModified int64
 	var data []byte
@@ -178,6 +182,10 @@ func (o *ObjectStore) GetObject(ctx context.Context, bucket, key string) (*s3.Ob
 }
 
 func (o *ObjectStore) DeleteObject(ctx context.Context, bucket, key string) error {
+	if err := o.ensureBucketExists(ctx, bucket); err != nil {
+		return err
+	}
+
 	result, err := o.writer.ExecContext(ctx,
 		`DELETE FROM s3_objects WHERE bucket = ? AND key = ?`, bucket, key)
 	if err != nil {
@@ -207,8 +215,7 @@ func (o *ObjectStore) ListObjects(ctx context.Context, bucket, prefix, delimiter
 		args = append(args, marker)
 	}
 
-	query += ` ORDER BY key LIMIT ?`
-	args = append(args, maxKeys+1)
+	query += ` ORDER BY key`
 
 	rows, err := o.reader.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -221,15 +228,8 @@ func (o *ObjectStore) ListObjects(ctx context.Context, bucket, prefix, delimiter
 		Prefix:    prefix,
 		Delimiter: delimiter,
 	}
-	prefixes := make(map[string]bool)
-
-	count := 0
+	lastEntry := ""
 	for rows.Next() {
-		if count >= maxKeys {
-			result.IsTruncated = true
-			break
-		}
-
 		var key string
 		var lastModified int64
 		var etag string
@@ -242,15 +242,28 @@ func (o *ObjectStore) ListObjects(ctx context.Context, bucket, prefix, delimiter
 			afterPrefix := strings.TrimPrefix(key, prefix)
 			if idx := strings.Index(afterPrefix, delimiter); idx >= 0 {
 				commonPrefix := prefix + afterPrefix[:idx+1]
-				if !prefixes[commonPrefix] {
-					prefixes[commonPrefix] = true
-					result.CommonPrefixes = append(result.CommonPrefixes, commonPrefix)
+				if commonPrefix <= marker || commonPrefix == lastEntry {
+					continue
 				}
-				count++
+				if len(result.Objects)+len(result.CommonPrefixes) >= maxKeys {
+					result.IsTruncated = true
+					result.NextMarker = lastEntry
+					break
+				}
+				result.CommonPrefixes = append(result.CommonPrefixes, commonPrefix)
+				lastEntry = commonPrefix
 				continue
 			}
 		}
 
+		if key <= marker {
+			continue
+		}
+		if len(result.Objects)+len(result.CommonPrefixes) >= maxKeys {
+			result.IsTruncated = true
+			result.NextMarker = lastEntry
+			break
+		}
 		result.Objects = append(result.Objects, s3.ObjectInfo{
 			Key:          key,
 			LastModified: time.Unix(0, lastModified),
@@ -258,18 +271,17 @@ func (o *ObjectStore) ListObjects(ctx context.Context, bucket, prefix, delimiter
 			Size:         size,
 			StorageClass: "STANDARD",
 		})
-		count++
-	}
-
-	// Set NextMarker when truncated.
-	if result.IsTruncated && len(result.Objects) > 0 {
-		result.NextMarker = result.Objects[len(result.Objects)-1].Key
+		lastEntry = key
 	}
 
 	return result, rows.Err()
 }
 
 func (o *ObjectStore) HeadObject(ctx context.Context, bucket, key string) (*s3.Object, error) {
+	if err := o.ensureBucketExists(ctx, bucket); err != nil {
+		return nil, err
+	}
+
 	var obj s3.Object
 	var lastModified int64
 	err := o.reader.QueryRowContext(ctx,
@@ -306,4 +318,9 @@ func escapeLIKE(s string) string {
 	s = strings.ReplaceAll(s, `%`, `\%`)
 	s = strings.ReplaceAll(s, `_`, `\_`)
 	return s
+}
+
+func (o *ObjectStore) ensureBucketExists(ctx context.Context, bucket string) error {
+	_, err := o.GetBucket(ctx, bucket)
+	return err
 }

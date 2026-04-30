@@ -47,46 +47,19 @@ func (s *Server) authenticateRequest(r *http.Request) *authError {
 		return nil
 	}
 
-	raw := strings.TrimSpace(r.Header.Get("Authorization"))
-	if raw == "" {
-		return &authError{code: "AccessDenied", message: "AWS Signature Version 4 authorization is required"}
+	authz, authErr := parseAuthorizationHeader(r)
+	if authErr != nil {
+		return authErr
 	}
-
-	authz, err := parseAuthHeader(raw)
-	if err != nil {
-		return &authError{code: "AccessDenied", message: err.Error()}
+	credentialParts, authErr := s.validateCredentialScope(authz)
+	if authErr != nil {
+		return authErr
 	}
-
-	credentialParts := strings.Split(authz.credential, "/")
-	if len(credentialParts) != 5 || credentialParts[4] != "aws4_request" {
-		return &authError{code: "AccessDenied", message: "invalid credential scope"}
+	amzDate, authErr := validateAmzDate(r)
+	if authErr != nil {
+		return authErr
 	}
-	if credentialParts[0] != s.auth.accessKeyID {
-		return &authError{code: "InvalidAccessKeyId", message: "The AWS Access Key Id you provided does not exist in our records."}
-	}
-	if credentialParts[3] != "s3" {
-		return &authError{code: "AccessDenied", message: "invalid service scope"}
-	}
-	if s.region != "" && credentialParts[2] != s.region {
-		return &authError{code: "SignatureDoesNotMatch", message: "credential scope region does not match the configured S3 region"}
-	}
-
-	amzDate := strings.TrimSpace(r.Header.Get("X-Amz-Date"))
-	if amzDate == "" {
-		return &authError{code: "AccessDenied", message: "missing X-Amz-Date header"}
-	}
-	t, err := time.Parse("20060102T150405Z", amzDate)
-	if err != nil {
-		return &authError{code: "AccessDenied", message: "invalid X-Amz-Date header"}
-	}
-	if skew := time.Since(t); skew > 15*time.Minute || skew < -15*time.Minute {
-		return &authError{code: "RequestTimeTooSkewed", message: "The difference between the request time and the current time is too large."}
-	}
-
-	payloadHash := strings.TrimSpace(r.Header.Get("X-Amz-Content-Sha256"))
-	if payloadHash == "" {
-		payloadHash = emptyPayloadSHA256
-	}
+	payloadHash := payloadHashFromRequest(r)
 
 	canonicalRequest, err := buildCanonicalRequest(r, authz.signedHeaders, payloadHash)
 	if err != nil {
@@ -108,6 +81,60 @@ func (s *Server) authenticateRequest(r *http.Request) *authError {
 	}
 
 	return nil
+}
+
+func parseAuthorizationHeader(r *http.Request) (*authHeader, *authError) {
+	raw := strings.TrimSpace(r.Header.Get("Authorization"))
+	if raw == "" {
+		return nil, &authError{code: "AccessDenied", message: "AWS Signature Version 4 authorization is required"}
+	}
+
+	authz, err := parseAuthHeader(raw)
+	if err != nil {
+		return nil, &authError{code: "AccessDenied", message: err.Error()}
+	}
+	return authz, nil
+}
+
+func (s *Server) validateCredentialScope(authz *authHeader) ([]string, *authError) {
+	credentialParts := strings.Split(authz.credential, "/")
+	if len(credentialParts) != 5 || credentialParts[4] != "aws4_request" {
+		return nil, &authError{code: "AccessDenied", message: "invalid credential scope"}
+	}
+	if credentialParts[0] != s.auth.accessKeyID {
+		return nil, &authError{code: "InvalidAccessKeyId", message: "The AWS Access Key Id you provided does not exist in our records."}
+	}
+	if credentialParts[3] != "s3" {
+		return nil, &authError{code: "AccessDenied", message: "invalid service scope"}
+	}
+	if s.region != "" && credentialParts[2] != s.region {
+		return nil, &authError{code: "SignatureDoesNotMatch", message: "credential scope region does not match the configured S3 region"}
+	}
+	return credentialParts, nil
+}
+
+func validateAmzDate(r *http.Request) (string, *authError) {
+	amzDate := strings.TrimSpace(r.Header.Get("X-Amz-Date"))
+	if amzDate == "" {
+		return "", &authError{code: "AccessDenied", message: "missing X-Amz-Date header"}
+	}
+
+	t, err := time.Parse("20060102T150405Z", amzDate)
+	if err != nil {
+		return "", &authError{code: "AccessDenied", message: "invalid X-Amz-Date header"}
+	}
+	if skew := time.Since(t); skew > 15*time.Minute || skew < -15*time.Minute {
+		return "", &authError{code: "RequestTimeTooSkewed", message: "The difference between the request time and the current time is too large."}
+	}
+	return amzDate, nil
+}
+
+func payloadHashFromRequest(r *http.Request) string {
+	payloadHash := strings.TrimSpace(r.Header.Get("X-Amz-Content-Sha256"))
+	if payloadHash == "" {
+		return emptyPayloadSHA256
+	}
+	return payloadHash
 }
 
 func parseAuthHeader(raw string) (*authHeader, error) {

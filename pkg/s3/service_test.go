@@ -188,13 +188,13 @@ func TestService_ValidateBucketName(t *testing.T) {
 		{"abc", true},
 		{"bucket123", true},
 		{"123bucket", true},
-		{"a", false},           // too short
-		{"ab", false},          // too short
-		{"-bucket", false},     // starts with hyphen
-		{"bucket-", false},     // ends with hyphen
-		{"Bucket", false},      // uppercase
-		{"bucket.name", false}, // dot not allowed
-		{"192.168.1.1", false}, // IP address
+		{"a", false},                     // too short
+		{"ab", false},                    // too short
+		{"-bucket", false},               // starts with hyphen
+		{"bucket-", false},               // ends with hyphen
+		{"Bucket", false},                // uppercase
+		{"bucket.name", false},           // dot not allowed
+		{"192.168.1.1", false},           // IP address
 		{strings.Repeat("a", 64), false}, // too long
 	}
 	sub := &mockSubmitter{}

@@ -214,6 +214,58 @@ func TestObjectStore_DeleteBucket_NotEmpty(t *testing.T) {
 	}
 }
 
+func TestObjectStore_ObjectOpsMissingBucket(t *testing.T) {
+	store := openTestObjectStore(t)
+	ctx := context.Background()
+
+	if _, _, err := store.GetObject(ctx, "missing", "key"); !errors.Is(err, s3.ErrBucketNotFound) {
+		t.Fatalf("GetObject expected ErrBucketNotFound, got: %v", err)
+	}
+	if err := store.DeleteObject(ctx, "missing", "key"); !errors.Is(err, s3.ErrBucketNotFound) {
+		t.Fatalf("DeleteObject expected ErrBucketNotFound, got: %v", err)
+	}
+	if _, err := store.HeadObject(ctx, "missing", "key"); !errors.Is(err, s3.ErrBucketNotFound) {
+		t.Fatalf("HeadObject expected ErrBucketNotFound, got: %v", err)
+	}
+}
+
+func TestObjectStore_ListObjects_DelimiterPagination(t *testing.T) {
+	store := openTestObjectStore(t)
+	ctx := context.Background()
+
+	if err := store.PutBucket(ctx, "bucket"); err != nil {
+		t.Fatalf("PutBucket: %v", err)
+	}
+	_, _ = store.PutObject(ctx, "bucket", "photos/2024/jan.jpg", []byte("j"), "image/jpeg", 0, nil)
+	_, _ = store.PutObject(ctx, "bucket", "photos/2024/feb.jpg", []byte("f"), "image/jpeg", 0, nil)
+	_, _ = store.PutObject(ctx, "bucket", "photos/2025/mar.jpg", []byte("m"), "image/jpeg", 0, nil)
+
+	page1, err := store.ListObjects(ctx, "bucket", "photos/", "/", "", 1)
+	if err != nil {
+		t.Fatalf("ListObjects page1: %v", err)
+	}
+	if !page1.IsTruncated {
+		t.Fatal("expected page1 to be truncated")
+	}
+	if len(page1.CommonPrefixes) != 1 || page1.CommonPrefixes[0] != "photos/2024/" {
+		t.Fatalf("page1 common prefixes = %v, want [photos/2024/]", page1.CommonPrefixes)
+	}
+	if page1.NextMarker != "photos/2024/" {
+		t.Fatalf("page1 NextMarker = %q, want photos/2024/", page1.NextMarker)
+	}
+
+	page2, err := store.ListObjects(ctx, "bucket", "photos/", "/", page1.NextMarker, 1)
+	if err != nil {
+		t.Fatalf("ListObjects page2: %v", err)
+	}
+	if len(page2.CommonPrefixes) != 1 || page2.CommonPrefixes[0] != "photos/2025/" {
+		t.Fatalf("page2 common prefixes = %v, want [photos/2025/]", page2.CommonPrefixes)
+	}
+	if page2.IsTruncated {
+		t.Fatal("expected page2 not to be truncated")
+	}
+}
+
 func TestObjectStore_ETag_IsMD5(t *testing.T) {
 	data := []byte("hello world")
 	etag := computeETag(data)

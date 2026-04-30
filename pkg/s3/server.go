@@ -54,8 +54,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case bucket == "" && key == "":
 		s.handleService(r, w)
 	case bucket != "" && key == "":
-		if r.Method == http.MethodGet {
-			s.handleListObjects(r, w, bucket)
+		if r.Method == http.MethodGet && r.URL.Query().Get("list-type") == "2" {
+			s.handleListObjectsV2(r, w, bucket)
+		} else if r.Method == http.MethodGet {
+			s.handleListObjectsV1(r, w, bucket)
 		} else if r.Method == http.MethodPut {
 			s.handleCreateBucket(r, w, bucket)
 		} else if r.Method == http.MethodDelete {
@@ -133,17 +135,12 @@ func (s *Server) handleService(r *http.Request, w http.ResponseWriter) {
 	s.writeXML(w, result)
 }
 
-func (s *Server) handleListObjects(r *http.Request, w http.ResponseWriter, bucket string) {
+func (s *Server) handleListObjectsV1(r *http.Request, w http.ResponseWriter, bucket string) {
 	query := r.URL.Query()
 	prefix := query.Get("prefix")
 	delimiter := query.Get("delimiter")
 	marker := query.Get("marker")
-	maxKeys := 1000
-	if mk := query.Get("max-keys"); mk != "" {
-		if n, err := strconv.Atoi(mk); err == nil && n > 0 {
-			maxKeys = min(n, 1000)
-		}
-	}
+	maxKeys := parseMaxKeys(query.Get("max-keys"))
 
 	result, err := s.svc.ListObjects(r.Context(), bucket, prefix, delimiter, marker, maxKeys)
 	if err != nil {
@@ -182,6 +179,80 @@ func (s *Server) handleListObjects(r *http.Request, w http.ResponseWriter, bucke
 		MaxKeys:     maxKeys,
 		IsTruncated: result.IsTruncated,
 		NextMarker:  result.NextMarker,
+	}
+	for _, obj := range result.Objects {
+		xmlResult.Contents = append(xmlResult.Contents, Contents{
+			Key:          obj.Key,
+			LastModified: obj.LastModified.UTC().Format(time.RFC3339),
+			ETag:         fmt.Sprintf(`"%s"`, obj.ETag),
+			Size:         obj.Size,
+			StorageClass: obj.StorageClass,
+		})
+	}
+	for _, cp := range result.CommonPrefixes {
+		xmlResult.CommonPrefixes = append(xmlResult.CommonPrefixes, CommonPrefix{Prefix: cp})
+	}
+
+	s.writeXML(w, xmlResult)
+}
+
+func (s *Server) handleListObjectsV2(r *http.Request, w http.ResponseWriter, bucket string) {
+	query := r.URL.Query()
+	prefix := query.Get("prefix")
+	delimiter := query.Get("delimiter")
+	continuationToken := query.Get("continuation-token")
+	startAfter := query.Get("start-after")
+	cursor := continuationToken
+	if cursor == "" {
+		cursor = startAfter
+	}
+	maxKeys := parseMaxKeys(query.Get("max-keys"))
+
+	result, err := s.svc.ListObjects(r.Context(), bucket, prefix, delimiter, cursor, maxKeys)
+	if err != nil {
+		s.writeS3Error(w, err)
+		return
+	}
+
+	type Contents struct {
+		Key          string `xml:"Key"`
+		LastModified string `xml:"LastModified"`
+		ETag         string `xml:"ETag"`
+		Size         int64  `xml:"Size"`
+		StorageClass string `xml:"StorageClass"`
+	}
+	type CommonPrefix struct {
+		Prefix string `xml:"Prefix"`
+	}
+	type ListBucketResultV2 struct {
+		XMLName               xml.Name       `xml:"ListBucketResult"`
+		Xmlns                 string         `xml:"xmlns,attr"`
+		Name                  string         `xml:"Name"`
+		Prefix                string         `xml:"Prefix,omitempty"`
+		Delimiter             string         `xml:"Delimiter,omitempty"`
+		MaxKeys               int            `xml:"MaxKeys"`
+		KeyCount              int            `xml:"KeyCount"`
+		IsTruncated           bool           `xml:"IsTruncated"`
+		StartAfter            string         `xml:"StartAfter,omitempty"`
+		ContinuationToken     string         `xml:"ContinuationToken,omitempty"`
+		NextContinuationToken string         `xml:"NextContinuationToken,omitempty"`
+		Contents              []Contents     `xml:",omitempty"`
+		CommonPrefixes        []CommonPrefix `xml:",omitempty"`
+	}
+
+	xmlResult := ListBucketResultV2{
+		Xmlns:             "http://s3.amazonaws.com/doc/2006-03-01/",
+		Name:              result.Bucket,
+		Prefix:            result.Prefix,
+		Delimiter:         result.Delimiter,
+		MaxKeys:           maxKeys,
+		KeyCount:          len(result.Objects) + len(result.CommonPrefixes),
+		IsTruncated:       result.IsTruncated,
+		StartAfter:        startAfter,
+		ContinuationToken: continuationToken,
+	}
+	if result.IsTruncated {
+		xmlResult.NextContinuationToken = result.NextMarker
 	}
 	for _, obj := range result.Objects {
 		xmlResult.Contents = append(xmlResult.Contents, Contents{
@@ -374,4 +445,15 @@ func (s *Server) writeError(w http.ResponseWriter, code int, codeStr, message st
 	output, _ := xml.Marshal(e)
 	_, _ = w.Write([]byte(xml.Header))
 	_, _ = w.Write(output)
+}
+
+func parseMaxKeys(raw string) int {
+	maxKeys := 1000
+	if raw == "" {
+		return maxKeys
+	}
+	if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+		return min(n, 1000)
+	}
+	return maxKeys
 }

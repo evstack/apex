@@ -243,6 +243,90 @@ func TestIntegration_EmptyObject(t *testing.T) {
 	}
 }
 
+func TestIntegration_MissingBucketObjectOpsReturnNoSuchBucket(t *testing.T) {
+	ts := setupIntegrationServer(t)
+	defer ts.Close()
+
+	client := ts.Client()
+	base := ts.URL
+
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodDelete} {
+		resp := doReq(t, client, method, base+"/missing-bucket/key.txt") //nolint:bodyclose // closed below
+		assertStatus(t, resp, http.StatusNotFound)
+		if method == http.MethodHead {
+			closeBody(t, resp)
+			continue
+		}
+		body := readBody(t, resp)
+		if !strings.Contains(body, "NoSuchBucket") {
+			t.Fatalf("%s expected NoSuchBucket, got: %s", method, body)
+		}
+	}
+}
+
+func TestIntegration_ListObjectsV2DelimiterPagination(t *testing.T) {
+	ts := setupIntegrationServer(t)
+	defer ts.Close()
+
+	client := ts.Client()
+	base := ts.URL
+
+	resp := doReq(t, client, http.MethodPut, base+"/bucket") //nolint:bodyclose // closed in closeBody
+	closeBody(t, resp)
+
+	resp = doPutObject(t, client, base+"/bucket/photos/2024/jan.jpg", "jan", "image/jpeg") //nolint:bodyclose // closed in closeBody
+	closeBody(t, resp)
+	resp = doPutObject(t, client, base+"/bucket/photos/2024/feb.jpg", "feb", "image/jpeg") //nolint:bodyclose // closed in closeBody
+	closeBody(t, resp)
+	resp = doPutObject(t, client, base+"/bucket/photos/2025/mar.jpg", "mar", "image/jpeg") //nolint:bodyclose // closed in closeBody
+	closeBody(t, resp)
+
+	type commonPrefix struct {
+		Prefix string `xml:"Prefix"`
+	}
+	type listBucketResultV2 struct {
+		XMLName               xml.Name       `xml:"ListBucketResult"`
+		IsTruncated           bool           `xml:"IsTruncated"`
+		KeyCount              int            `xml:"KeyCount"`
+		NextContinuationToken string         `xml:"NextContinuationToken"`
+		CommonPrefixes        []commonPrefix `xml:"CommonPrefixes"`
+	}
+
+	page1 := doReq(t, client, http.MethodGet, base+"/bucket?list-type=2&prefix=photos/&delimiter=/&max-keys=1") //nolint:bodyclose // closed in readBody
+	assertStatus(t, page1, http.StatusOK)
+	body1 := readBody(t, page1)
+	var out1 listBucketResultV2
+	if err := xml.Unmarshal([]byte(body1), &out1); err != nil {
+		t.Fatalf("unmarshal page1: %v\nbody: %s", err, body1)
+	}
+	if !out1.IsTruncated {
+		t.Fatal("expected page1 to be truncated")
+	}
+	if out1.KeyCount != 1 {
+		t.Fatalf("page1 KeyCount = %d, want 1", out1.KeyCount)
+	}
+	if len(out1.CommonPrefixes) != 1 || out1.CommonPrefixes[0].Prefix != "photos/2024/" {
+		t.Fatalf("page1 common prefixes = %v, want [photos/2024/]", out1.CommonPrefixes)
+	}
+	if out1.NextContinuationToken == "" {
+		t.Fatal("expected page1 next continuation token")
+	}
+
+	page2 := doReq(t, client, http.MethodGet, base+"/bucket?list-type=2&prefix=photos/&delimiter=/&max-keys=1&continuation-token="+out1.NextContinuationToken) //nolint:bodyclose // closed in readBody
+	assertStatus(t, page2, http.StatusOK)
+	body2 := readBody(t, page2)
+	var out2 listBucketResultV2
+	if err := xml.Unmarshal([]byte(body2), &out2); err != nil {
+		t.Fatalf("unmarshal page2: %v\nbody: %s", err, body2)
+	}
+	if out2.IsTruncated {
+		t.Fatal("expected page2 not to be truncated")
+	}
+	if len(out2.CommonPrefixes) != 1 || out2.CommonPrefixes[0].Prefix != "photos/2025/" {
+		t.Fatalf("page2 common prefixes = %v, want [photos/2025/]", out2.CommonPrefixes)
+	}
+}
+
 // --- helpers ---
 
 func doReq(t *testing.T, client *http.Client, method, url string) *http.Response {

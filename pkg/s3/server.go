@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -136,6 +137,18 @@ func (s *Server) handleService(r *http.Request, w http.ResponseWriter) {
 	s.writeXML(w, result)
 }
 
+type xmlContents struct {
+	Key          string `xml:"Key"`
+	LastModified string `xml:"LastModified"`
+	ETag         string `xml:"ETag"`
+	Size         int64  `xml:"Size"`
+	StorageClass string `xml:"StorageClass"`
+}
+
+type xmlCommonPrefix struct {
+	Prefix string `xml:"Prefix"`
+}
+
 func (s *Server) handleListObjectsV1(r *http.Request, w http.ResponseWriter, bucket string) {
 	query := r.URL.Query()
 	prefix := query.Get("prefix")
@@ -149,27 +162,17 @@ func (s *Server) handleListObjectsV1(r *http.Request, w http.ResponseWriter, buc
 		return
 	}
 
-	type Contents struct {
-		Key          string `xml:"Key"`
-		LastModified string `xml:"LastModified"`
-		ETag         string `xml:"ETag"`
-		Size         int64  `xml:"Size"`
-		StorageClass string `xml:"StorageClass"`
-	}
-	type CommonPrefix struct {
-		Prefix string `xml:"Prefix"`
-	}
 	type ListBucketResult struct {
-		XMLName        xml.Name       `xml:"ListBucketResult"`
-		Xmlns          string         `xml:"xmlns,attr"`
-		Name           string         `xml:"Name"`
-		Prefix         string         `xml:"Prefix"`
-		Marker         string         `xml:"Marker"`
-		NextMarker     string         `xml:"NextMarker,omitempty"`
-		MaxKeys        int            `xml:"MaxKeys"`
-		IsTruncated    bool           `xml:"IsTruncated"`
-		Contents       []Contents     `xml:",omitempty"`
-		CommonPrefixes []CommonPrefix `xml:",omitempty"`
+		XMLName        xml.Name          `xml:"ListBucketResult"`
+		Xmlns          string            `xml:"xmlns,attr"`
+		Name           string            `xml:"Name"`
+		Prefix         string            `xml:"Prefix"`
+		Marker         string            `xml:"Marker"`
+		NextMarker     string            `xml:"NextMarker,omitempty"`
+		MaxKeys        int               `xml:"MaxKeys"`
+		IsTruncated    bool              `xml:"IsTruncated"`
+		Contents       []xmlContents     `xml:",omitempty"`
+		CommonPrefixes []xmlCommonPrefix `xml:",omitempty"`
 	}
 
 	xmlResult := ListBucketResult{
@@ -182,7 +185,7 @@ func (s *Server) handleListObjectsV1(r *http.Request, w http.ResponseWriter, buc
 		NextMarker:  result.NextMarker,
 	}
 	for _, obj := range result.Objects {
-		xmlResult.Contents = append(xmlResult.Contents, Contents{
+		xmlResult.Contents = append(xmlResult.Contents, xmlContents{
 			Key:          obj.Key,
 			LastModified: obj.LastModified.UTC().Format(time.RFC3339),
 			ETag:         fmt.Sprintf(`"%s"`, obj.ETag),
@@ -191,7 +194,7 @@ func (s *Server) handleListObjectsV1(r *http.Request, w http.ResponseWriter, buc
 		})
 	}
 	for _, cp := range result.CommonPrefixes {
-		xmlResult.CommonPrefixes = append(xmlResult.CommonPrefixes, CommonPrefix{Prefix: cp})
+		xmlResult.CommonPrefixes = append(xmlResult.CommonPrefixes, xmlCommonPrefix{Prefix: cp})
 	}
 
 	s.writeXML(w, xmlResult)
@@ -215,30 +218,20 @@ func (s *Server) handleListObjectsV2(r *http.Request, w http.ResponseWriter, buc
 		return
 	}
 
-	type Contents struct {
-		Key          string `xml:"Key"`
-		LastModified string `xml:"LastModified"`
-		ETag         string `xml:"ETag"`
-		Size         int64  `xml:"Size"`
-		StorageClass string `xml:"StorageClass"`
-	}
-	type CommonPrefix struct {
-		Prefix string `xml:"Prefix"`
-	}
 	type ListBucketResultV2 struct {
-		XMLName               xml.Name       `xml:"ListBucketResult"`
-		Xmlns                 string         `xml:"xmlns,attr"`
-		Name                  string         `xml:"Name"`
-		Prefix                string         `xml:"Prefix,omitempty"`
-		Delimiter             string         `xml:"Delimiter,omitempty"`
-		MaxKeys               int            `xml:"MaxKeys"`
-		KeyCount              int            `xml:"KeyCount"`
-		IsTruncated           bool           `xml:"IsTruncated"`
-		StartAfter            string         `xml:"StartAfter,omitempty"`
-		ContinuationToken     string         `xml:"ContinuationToken,omitempty"`
-		NextContinuationToken string         `xml:"NextContinuationToken,omitempty"`
-		Contents              []Contents     `xml:",omitempty"`
-		CommonPrefixes        []CommonPrefix `xml:",omitempty"`
+		XMLName               xml.Name          `xml:"ListBucketResult"`
+		Xmlns                 string            `xml:"xmlns,attr"`
+		Name                  string            `xml:"Name"`
+		Prefix                string            `xml:"Prefix,omitempty"`
+		Delimiter             string            `xml:"Delimiter,omitempty"`
+		MaxKeys               int               `xml:"MaxKeys"`
+		KeyCount              int               `xml:"KeyCount"`
+		IsTruncated           bool              `xml:"IsTruncated"`
+		StartAfter            string            `xml:"StartAfter,omitempty"`
+		ContinuationToken     string            `xml:"ContinuationToken,omitempty"`
+		NextContinuationToken string            `xml:"NextContinuationToken,omitempty"`
+		Contents              []xmlContents     `xml:",omitempty"`
+		CommonPrefixes        []xmlCommonPrefix `xml:",omitempty"`
 	}
 
 	xmlResult := ListBucketResultV2{
@@ -256,7 +249,7 @@ func (s *Server) handleListObjectsV2(r *http.Request, w http.ResponseWriter, buc
 		xmlResult.NextContinuationToken = result.NextMarker
 	}
 	for _, obj := range result.Objects {
-		xmlResult.Contents = append(xmlResult.Contents, Contents{
+		xmlResult.Contents = append(xmlResult.Contents, xmlContents{
 			Key:          obj.Key,
 			LastModified: obj.LastModified.UTC().Format(time.RFC3339),
 			ETag:         fmt.Sprintf(`"%s"`, obj.ETag),
@@ -265,18 +258,13 @@ func (s *Server) handleListObjectsV2(r *http.Request, w http.ResponseWriter, buc
 		})
 	}
 	for _, cp := range result.CommonPrefixes {
-		xmlResult.CommonPrefixes = append(xmlResult.CommonPrefixes, CommonPrefix{Prefix: cp})
+		xmlResult.CommonPrefixes = append(xmlResult.CommonPrefixes, xmlCommonPrefix{Prefix: cp})
 	}
 
 	s.writeXML(w, xmlResult)
 }
 
 func (s *Server) handleCreateBucket(r *http.Request, w http.ResponseWriter, bucket string) {
-	if r.Method != http.MethodPut {
-		s.writeError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "")
-		return
-	}
-
 	err := s.svc.CreateBucket(r.Context(), bucket)
 	if err != nil {
 		s.writeS3Error(w, err)
@@ -288,11 +276,6 @@ func (s *Server) handleCreateBucket(r *http.Request, w http.ResponseWriter, buck
 }
 
 func (s *Server) handleDeleteBucket(r *http.Request, w http.ResponseWriter, bucket string) {
-	if r.Method != http.MethodDelete {
-		s.writeError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "")
-		return
-	}
-
 	err := s.svc.DeleteBucket(r.Context(), bucket)
 	if err != nil {
 		s.writeS3Error(w, err)
@@ -303,11 +286,6 @@ func (s *Server) handleDeleteBucket(r *http.Request, w http.ResponseWriter, buck
 }
 
 func (s *Server) handleHeadBucket(r *http.Request, w http.ResponseWriter, bucket string) {
-	if r.Method != http.MethodHead {
-		s.writeError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "")
-		return
-	}
-
 	_, err := s.svc.HeadBucket(r.Context(), bucket)
 	if err != nil {
 		s.writeS3Error(w, err)
@@ -463,6 +441,18 @@ func (s *Server) writeError(w http.ResponseWriter, code int, codeStr, message st
 	output, _ := xml.Marshal(e)
 	_, _ = w.Write([]byte(xml.Header))
 	_, _ = w.Write(output)
+}
+
+func readRequestBody(r *http.Request) ([]byte, error) {
+	if r.Body == nil {
+		return nil, nil
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	return body, nil
 }
 
 func parseMaxKeys(raw string) int {

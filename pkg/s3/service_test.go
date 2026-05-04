@@ -71,21 +71,22 @@ func (m *mockStore) ListBuckets(_ context.Context) ([]Bucket, error) {
 	return result, nil
 }
 
-func (m *mockStore) PutObject(_ context.Context, bucket, key string, data []byte, contentType string, sha256 string, height uint64, commitments []string) (*Object, error) {
+func (m *mockStore) PutObject(_ context.Context, bucket, key string, data []byte, contentType, etag, sha256 string) (*Object, error) {
 	if _, ok := m.buckets[bucket]; !ok {
 		return nil, ErrBucketNotFound
 	}
 	now := time.Now()
+	if etag == "" {
+		etag = "etag-" + key
+	}
 	obj := &Object{
 		Key:          key,
 		Bucket:       bucket,
 		Size:         int64(len(data)),
-		ETag:         "etag-" + key,
+		ETag:         etag,
 		ContentType:  contentType,
 		LastModified: now,
 		SHA256:       sha256,
-		Height:       height,
-		Commitments:  commitments,
 	}
 	m.objects[bucket][key] = &storedObject{obj: obj, data: data}
 	return obj, nil
@@ -282,15 +283,11 @@ func TestService_PutObject_WithSubmitter(t *testing.T) {
 	}
 
 	data := []byte("celestia blob data")
-	obj, err := svc.PutObject(ctx, "test-bucket", "key1", bytes.NewReader(data), "application/octet-stream")
-	if err != nil {
+	if _, err := svc.PutObject(ctx, "test-bucket", "key1", bytes.NewReader(data), "application/octet-stream"); err != nil {
 		t.Fatalf("PutObject failed: %v", err)
 	}
 	if sub.calls != 1 {
 		t.Errorf("expected 1 submit call, got %d", sub.calls)
-	}
-	if obj.Height == 0 {
-		t.Error("expected non-zero height from submission")
 	}
 	if sub.lastReq == nil || len(sub.lastReq.Blobs) != 1 {
 		t.Fatalf("expected a single submitted blob, got %#v", sub.lastReq)
@@ -306,9 +303,6 @@ func TestService_PutObject_WithSubmitter(t *testing.T) {
 	wantSHA256 := hex.EncodeToString(func() []byte { s := sha256pkg.Sum256(data); return s[:] }())
 	if env.SHA256 != wantSHA256 {
 		t.Errorf("envelope SHA256 = %s, want %s", env.SHA256, wantSHA256)
-	}
-	if len(obj.Commitments) != 1 || obj.Commitments[0] != hex.EncodeToString(sub.lastReq.Blobs[0].Commitment) {
-		t.Fatalf("commitments = %v, want [%s]", obj.Commitments, hex.EncodeToString(sub.lastReq.Blobs[0].Commitment))
 	}
 }
 

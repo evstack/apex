@@ -1,14 +1,12 @@
 package s3
 
 import (
-	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -149,19 +147,6 @@ func validatePayloadHash(r *http.Request, body []byte) *authError {
 		code:    "XAmzContentSHA256Mismatch",
 		message: "The provided x-amz-content-sha256 header does not match the request payload.",
 	}
-}
-
-func readRequestBody(r *http.Request) ([]byte, error) {
-	if r.Body == nil {
-		return nil, nil
-	}
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		return nil, err
-	}
-	r.Body = io.NopCloser(bytes.NewReader(body))
-	return body, nil
 }
 
 func parseAuthHeader(raw string) (*authHeader, error) {

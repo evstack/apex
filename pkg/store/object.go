@@ -2,32 +2,26 @@ package store
 
 import (
 	"context"
-	"crypto/md5" //nolint:gosec // MD5 required by S3 protocol for ETag
 	"database/sql"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/evstack/apex/pkg/s3"
-	"github.com/evstack/apex/pkg/types"
 )
 
 // ObjectStore implements s3.ObjectStore using SQLite.
 type ObjectStore struct {
 	writer *sql.DB
 	reader *sql.DB
-	ns     types.Namespace
 }
 
 // NewObjectStore creates an ObjectStore backed by the given SQLiteStore.
-func NewObjectStore(db *SQLiteStore, namespace types.Namespace) *ObjectStore {
+func NewObjectStore(db *SQLiteStore) *ObjectStore {
 	return &ObjectStore{
 		writer: db.writer,
 		reader: db.reader,
-		ns:     namespace,
 	}
 }
 
@@ -111,27 +105,20 @@ func (o *ObjectStore) ListBuckets(ctx context.Context) ([]s3.Bucket, error) {
 	return buckets, rows.Err()
 }
 
-func (o *ObjectStore) PutObject(ctx context.Context, bucket, key string, data []byte, contentType string, sha256 string, height uint64, commitments []string) (*s3.Object, error) {
-	etag := computeETag(data)
+func (o *ObjectStore) PutObject(ctx context.Context, bucket, key string, data []byte, contentType, etag, sha256 string) (*s3.Object, error) {
 	now := time.Now().UnixNano()
-	if commitments == nil {
-		commitments = []string{}
-	}
-	commitmentsJSON, _ := json.Marshal(commitments)
 
 	_, err := o.writer.ExecContext(ctx,
-		`INSERT INTO s3_objects (bucket, key, size, etag, content_type, last_modified, height, namespace, commitments, sha256, data)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO s3_objects (bucket, key, size, etag, content_type, last_modified, sha256, data)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(bucket, key) DO UPDATE SET
 		   size = excluded.size,
 		   etag = excluded.etag,
 		   content_type = excluded.content_type,
 		   last_modified = excluded.last_modified,
-		   height = excluded.height,
-		   commitments = excluded.commitments,
 		   sha256 = excluded.sha256,
 		   data = excluded.data`,
-		bucket, key, len(data), etag, contentType, now, height, o.ns.String(), string(commitmentsJSON), sha256, data)
+		bucket, key, len(data), etag, contentType, now, sha256, data)
 	if err != nil {
 		if isSQLiteFKConstraint(err) {
 			return nil, s3.ErrBucketNotFound
@@ -147,27 +134,23 @@ func (o *ObjectStore) PutObject(ctx context.Context, bucket, key string, data []
 		ContentType:  contentType,
 		LastModified: time.Unix(0, now),
 		SHA256:       sha256,
-		Height:       height,
-		Namespace:    o.ns.String(),
-		Commitments:  commitments,
 	}, nil
 }
 
 func (o *ObjectStore) GetObject(ctx context.Context, bucket, key string) (*s3.Object, []byte, error) {
-	if err := o.ensureBucketExists(ctx, bucket); err != nil {
+	if _, err := o.GetBucket(ctx, bucket); err != nil {
 		return nil, nil, err
 	}
 
 	var obj s3.Object
 	var lastModified int64
 	var data []byte
-	var commitmentsJSON string
 
 	err := o.reader.QueryRowContext(ctx,
-		`SELECT key, bucket, size, etag, content_type, last_modified, height, commitments, sha256, data
+		`SELECT key, bucket, size, etag, content_type, last_modified, sha256, data
 		 FROM s3_objects WHERE bucket = ? AND key = ?`,
 		bucket, key).Scan(&obj.Key, &obj.Bucket, &obj.Size, &obj.ETag, &obj.ContentType,
-		&lastModified, &obj.Height, &commitmentsJSON, &obj.SHA256, &data)
+		&lastModified, &obj.SHA256, &data)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil, s3.ErrObjectNotFound
@@ -175,16 +158,12 @@ func (o *ObjectStore) GetObject(ctx context.Context, bucket, key string) (*s3.Ob
 		return nil, nil, fmt.Errorf("query object: %w", err)
 	}
 	obj.LastModified = time.Unix(0, lastModified)
-	obj.Namespace = o.ns.String()
-	if commitmentsJSON != "" && commitmentsJSON != "null" {
-		_ = json.Unmarshal([]byte(commitmentsJSON), &obj.Commitments)
-	}
 
 	return &obj, data, nil
 }
 
 func (o *ObjectStore) DeleteObject(ctx context.Context, bucket, key string) error {
-	if err := o.ensureBucketExists(ctx, bucket); err != nil {
+	if _, err := o.GetBucket(ctx, bucket); err != nil {
 		return err
 	}
 
@@ -285,7 +264,7 @@ func (o *ObjectStore) ListObjects(ctx context.Context, bucket, prefix, delimiter
 }
 
 func (o *ObjectStore) HeadObject(ctx context.Context, bucket, key string) (*s3.Object, error) {
-	if err := o.ensureBucketExists(ctx, bucket); err != nil {
+	if _, err := o.GetBucket(ctx, bucket); err != nil {
 		return nil, err
 	}
 
@@ -312,12 +291,6 @@ func isSQLiteFKConstraint(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "FOREIGN KEY constraint failed")
 }
 
-// computeETag returns the MD5 hex digest of data, matching S3's ETag spec.
-func computeETag(data []byte) string {
-	h := md5.Sum(data) //nolint:gosec // MD5 required by S3 protocol
-	return hex.EncodeToString(h[:])
-}
-
 // escapeLIKE escapes SQLite LIKE wildcard characters in s so the value is
 // treated as a literal prefix rather than a pattern.
 func escapeLIKE(s string) string {
@@ -325,9 +298,4 @@ func escapeLIKE(s string) string {
 	s = strings.ReplaceAll(s, `%`, `\%`)
 	s = strings.ReplaceAll(s, `_`, `\_`)
 	return s
-}
-
-func (o *ObjectStore) ensureBucketExists(ctx context.Context, bucket string) error {
-	_, err := o.GetBucket(ctx, bucket)
-	return err
 }

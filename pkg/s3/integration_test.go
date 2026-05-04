@@ -51,7 +51,7 @@ func setupIntegrationServer(t *testing.T) *httptest.Server {
 	}
 	t.Cleanup(func() { _ = sqliteStore.Close() })
 
-	objStore := store.NewObjectStore(sqliteStore, testNamespace())
+	objStore := store.NewObjectStore(sqliteStore)
 	sub := &mockBlobSubmitter{}
 	svc := apexs3.NewService(objStore, sub, testNamespace())
 	log := zerolog.New(io.Discard)

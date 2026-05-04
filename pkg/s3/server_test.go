@@ -99,7 +99,7 @@ func TestServer_DeleteBucket(t *testing.T) {
 func TestServer_DeleteBucket_NotEmpty(t *testing.T) {
 	server, store := setupHTTPTestServer()
 	_ = store.PutBucket(context.Background(), "test-bucket")
-	_, _ = store.PutObject(context.Background(), "test-bucket", "key", []byte("data"), "text/plain", "", 0, nil)
+	_, _ = store.PutObject(context.Background(), "test-bucket", "key", []byte("data"), "text/plain", "", "")
 
 	req := httptest.NewRequest(http.MethodDelete, "/test-bucket", nil)
 	rec := httptest.NewRecorder()
@@ -158,7 +158,7 @@ func TestServer_GetObject_NotFound(t *testing.T) {
 func TestServer_HeadObject(t *testing.T) {
 	server, store := setupHTTPTestServer()
 	_ = store.PutBucket(context.Background(), "test-bucket")
-	_, _ = store.PutObject(context.Background(), "test-bucket", "test.txt", []byte("content"), "text/plain", "", 0, nil)
+	_, _ = store.PutObject(context.Background(), "test-bucket", "test.txt", []byte("content"), "text/plain", "", "")
 
 	req := httptest.NewRequest(http.MethodHead, "/test-bucket/test.txt", nil)
 	rec := httptest.NewRecorder()
@@ -178,7 +178,7 @@ func TestServer_HeadObject(t *testing.T) {
 func TestServer_DeleteObject(t *testing.T) {
 	server, store := setupHTTPTestServer()
 	_ = store.PutBucket(context.Background(), "test-bucket")
-	_, _ = store.PutObject(context.Background(), "test-bucket", "test.txt", []byte("content"), "text/plain", "", 0, nil)
+	_, _ = store.PutObject(context.Background(), "test-bucket", "test.txt", []byte("content"), "text/plain", "", "")
 
 	req := httptest.NewRequest(http.MethodDelete, "/test-bucket/test.txt", nil)
 	rec := httptest.NewRecorder()
@@ -200,8 +200,8 @@ func TestServer_DeleteObject(t *testing.T) {
 func TestServer_ListObjects(t *testing.T) {
 	server, store := setupHTTPTestServer()
 	_ = store.PutBucket(context.Background(), "test-bucket")
-	_, _ = store.PutObject(context.Background(), "test-bucket", "file1.txt", []byte("a"), "text/plain", "", 0, nil)
-	_, _ = store.PutObject(context.Background(), "test-bucket", "file2.txt", []byte("bb"), "text/plain", "", 0, nil)
+	_, _ = store.PutObject(context.Background(), "test-bucket", "file1.txt", []byte("a"), "text/plain", "", "")
+	_, _ = store.PutObject(context.Background(), "test-bucket", "file2.txt", []byte("bb"), "text/plain", "", "")
 
 	req := httptest.NewRequest(http.MethodGet, "/test-bucket?list-type=2", nil)
 	rec := httptest.NewRecorder()

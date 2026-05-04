@@ -34,7 +34,7 @@ type ObjectStore interface {
 	DeleteBucket(ctx context.Context, name string) error
 	ListBuckets(ctx context.Context) ([]Bucket, error)
 
-	PutObject(ctx context.Context, bucket, key string, data []byte, contentType string, sha256 string, height uint64, commitments []string) (*Object, error)
+	PutObject(ctx context.Context, bucket, key string, data []byte, contentType, etag, sha256 string) (*Object, error)
 	GetObject(ctx context.Context, bucket, key string) (*Object, []byte, error)
 	DeleteObject(ctx context.Context, bucket, key string) error
 	ListObjects(ctx context.Context, bucket, prefix, delimiter, marker string, maxKeys int) (*ListObjectsResult, error)
@@ -110,16 +110,14 @@ func (s *Service) PutObject(ctx context.Context, bucket, key string, r io.Reader
 		return nil, ErrObjectTooLarge
 	}
 
-	var height uint64
-	var commitments []string
-	var sha256Hex string
+	var sha256Hex, etag string
 
 	if len(data) > 0 {
 		sum := sha256pkg.Sum256(data)
 		sha256Hex = hex.EncodeToString(sum[:])
 
 		md5sum := md5.Sum(data) //nolint:gosec // MD5 required by S3 protocol for ETag
-		etag := hex.EncodeToString(md5sum[:])
+		etag = hex.EncodeToString(md5sum[:])
 
 		envelope := CommitmentEnvelope{
 			Version:     1,
@@ -139,18 +137,15 @@ func (s *Service) PutObject(ctx context.Context, bucket, key string, r io.Reader
 		if err != nil {
 			return nil, fmt.Errorf("build blob: %w", err)
 		}
-		result, submitErr := s.submitter.Submit(ctx, &submit.Request{
+		if _, submitErr := s.submitter.Submit(ctx, &submit.Request{
 			Blobs: []submit.Blob{blob},
-		})
-		if submitErr != nil {
+		}); submitErr != nil {
 			return nil, fmt.Errorf("submit to celestia: %w", submitErr)
 		}
-		height = result.Height
-		commitments = []string{hex.EncodeToString(blob.Commitment)}
 	}
 
 	// Write to store only after successful Celestia submission.
-	obj, err := s.store.PutObject(ctx, bucket, key, data, contentType, sha256Hex, height, commitments)
+	obj, err := s.store.PutObject(ctx, bucket, key, data, contentType, etag, sha256Hex)
 	if err != nil {
 		return nil, err
 	}

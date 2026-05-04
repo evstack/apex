@@ -45,10 +45,7 @@ type Object struct {
 	ContentType  string
 	LastModified time.Time
 
-	SHA256      string   // hex SHA-256 of object content, anchored on Celestia
-	Height      uint64   // Celestia height where commitment was submitted
-	Namespace   string   // Namespace used for commitment submission
-	Commitments []string // Celestia blob commitments (of the envelope, not raw data)
+	SHA256 string // hex SHA-256 of object content, anchored on Celestia
 }
 
 // ListObjectsResult is the result of a ListObjects call.

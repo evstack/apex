@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -263,7 +264,7 @@ func canonicalHeaderValue(r *http.Request, name string) (string, bool) {
 		if r.ContentLength < 0 {
 			return "", false
 		}
-		return normalizeHeaderValue(fmt.Sprintf("%d", r.ContentLength)), true
+		return normalizeHeaderValue(strconv.FormatInt(r.ContentLength, 10)), true
 	}
 
 	values, ok := r.Header[http.CanonicalHeaderKey(name)]

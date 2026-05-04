@@ -20,7 +20,7 @@ const (
 // prove data authenticity by hashing a downloaded object and comparing against
 // the on-chain record.
 type CommitmentEnvelope struct {
-	Version     int    `json:"version"`      // schema version, currently 1
+	Version     int    `json:"version"` // schema version, currently 1
 	Bucket      string `json:"bucket"`
 	Key         string `json:"key"`
 	ContentType string `json:"content_type"`

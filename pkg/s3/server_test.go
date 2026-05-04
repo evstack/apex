@@ -24,11 +24,11 @@ func setupHTTPTestServer() (*Server, *mockStore) {
 	return NewServer(svc, "us-east-1", "", "", log), store
 }
 
-func setupHTTPTestServerWithAuth(accessKeyID, secretAccessKey string) (*Server, *mockStore) {
+func setupHTTPTestServerWithAuth() (*Server, *mockStore) {
 	store := newMockStore()
 	svc := NewService(store, &mockSubmitter{}, testNamespace())
 	log := zerolog.New(io.Discard)
-	return NewServer(svc, "us-east-1", accessKeyID, secretAccessKey, log), store
+	return NewServer(svc, "us-east-1", "app-key", "app-secret", log), store
 }
 
 func TestServer_ListBuckets(t *testing.T) {
@@ -308,7 +308,7 @@ func TestServer_URLDecoding(t *testing.T) {
 }
 
 func TestServer_AuthRejectsMissingAuthorization(t *testing.T) {
-	server, _ := setupHTTPTestServerWithAuth("app-key", "app-secret")
+	server, _ := setupHTTPTestServerWithAuth()
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -323,7 +323,7 @@ func TestServer_AuthRejectsMissingAuthorization(t *testing.T) {
 }
 
 func TestServer_AuthAcceptsSignedRequest(t *testing.T) {
-	server, store := setupHTTPTestServerWithAuth("app-key", "app-secret")
+	server, store := setupHTTPTestServerWithAuth()
 	_ = store.PutBucket(context.Background(), "bucket1")
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -338,7 +338,7 @@ func TestServer_AuthAcceptsSignedRequest(t *testing.T) {
 }
 
 func TestServer_AuthRejectsWrongSecret(t *testing.T) {
-	server, store := setupHTTPTestServerWithAuth("app-key", "app-secret")
+	server, store := setupHTTPTestServerWithAuth()
 	_ = store.PutBucket(context.Background(), "bucket1")
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -356,7 +356,7 @@ func TestServer_AuthRejectsWrongSecret(t *testing.T) {
 }
 
 func TestServer_HandlePutObjectRejectsPayloadHashMismatch(t *testing.T) {
-	server, store := setupHTTPTestServerWithAuth("app-key", "app-secret")
+	server, store := setupHTTPTestServerWithAuth()
 	_ = store.PutBucket(context.Background(), "bucket1")
 
 	signedBody := []byte("hello world")

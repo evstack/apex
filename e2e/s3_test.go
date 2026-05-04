@@ -15,8 +15,20 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
-	apexs3 "github.com/evstack/apex/pkg/s3"
 )
+
+// commitmentEnvelope mirrors pkg/s3.CommitmentEnvelope. Duplicated here to
+// avoid importing pkg/s3 which pulls in pkg/submit → Cosmos SDK gRPC code,
+// causing a proto registration conflict with the e2e module's own deps.
+type commitmentEnvelope struct {
+	Version     int    `json:"version"`
+	Bucket      string `json:"bucket"`
+	Key         string `json:"key"`
+	ContentType string `json:"content_type"`
+	Size        int64  `json:"size"`
+	SHA256      string `json:"sha256"`
+	ETag        string `json:"etag"`
+}
 
 func TestS3ObjectLifecycle(t *testing.T) {
 	if testing.Short() {
@@ -146,7 +158,7 @@ func TestS3ObjectLifecycle(t *testing.T) {
 	// The envelope — not the raw object data — is what lands on-chain.
 	sha256sum := sha256.Sum256(data)
 	md5sum := md5.Sum(data) //nolint:gosec // MD5 required by S3 protocol for ETag
-	envelope := apexs3.CommitmentEnvelope{
+	envelope := commitmentEnvelope{
 		Version:     1,
 		Bucket:      bucket,
 		Key:         key,

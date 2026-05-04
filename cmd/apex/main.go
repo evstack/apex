@@ -224,9 +224,9 @@ func setupS3Server(cfg *config.Config, db store.Store, blobSubmitter submit.Subm
 	if cfg.S3.AccessKeyID == "" && cfg.S3.SecretAccessKey == "" {
 		warnLog := log.Warn().Str("addr", cfg.S3.ListenAddr)
 		if isLoopbackBindAddr(cfg.S3.ListenAddr) {
-			warnLog.Msg("S3 API authentication is disabled; restrict access to trusted local clients or configure s3.access_key_id and s3.secret_access_key")
+			warnLog.Msg("S3 API authentication is disabled; restrict access to trusted local clients or set APEX_S3_ACCESS_KEY_ID and APEX_S3_SECRET_ACCESS_KEY")
 		} else {
-			warnLog.Msg("S3 API authentication is disabled on a non-loopback bind; configure s3.access_key_id and s3.secret_access_key or place Apex behind a trusted authenticated proxy")
+			warnLog.Msg("S3 API authentication is disabled on a non-loopback bind; set APEX_S3_ACCESS_KEY_ID and APEX_S3_SECRET_ACCESS_KEY or place Apex behind a trusted authenticated proxy")
 		}
 	}
 
@@ -265,36 +265,26 @@ func setupS3Server(cfg *config.Config, db store.Store, blobSubmitter submit.Subm
 }
 
 func isLoopbackBindAddr(addr string) bool {
-	target := strings.TrimSpace(addr)
-	if target == "" {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
 		return false
 	}
-	if strings.HasPrefix(target, "/") || strings.HasPrefix(target, "unix://") || strings.HasPrefix(target, "unix:") {
+	// Unix sockets are always local.
+	if strings.HasPrefix(addr, "/") || strings.HasPrefix(addr, "unix:") {
 		return true
 	}
-	if idx := strings.LastIndex(target, "://"); idx >= 0 {
-		target = target[idx+3:]
+	host := addr
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
 	}
-	target = strings.TrimLeft(target, "/")
-	if idx := strings.LastIndex(target, "/"); idx >= 0 {
-		target = target[idx+1:]
-	}
-	if strings.HasPrefix(target, ":") {
-		return false
-	}
-
-	host := target
-	if parsedHost, _, err := net.SplitHostPort(target); err == nil {
-		host = parsedHost
-	}
-	host = strings.Trim(host, "[]")
+	host = strings.Trim(host, "[]") // strip IPv6 brackets
 	if host == "" {
-		return false
+		return false // bare ":port" binds all interfaces
 	}
-	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+	lower := strings.ToLower(host)
+	if lower == "localhost" || strings.HasSuffix(lower, ".localhost") {
 		return true
 	}
-
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
 }

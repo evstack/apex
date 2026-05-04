@@ -219,6 +219,14 @@ func (o *ObjectStore) ListObjects(ctx context.Context, bucket, prefix, delimiter
 
 	query += ` ORDER BY key`
 
+	// For flat listings (no delimiter), one DB row = one result, so we can
+	// bound the scan exactly. Delimiter listings collapse multiple rows into
+	// common prefixes, so we cannot set a tight limit there.
+	if delimiter == "" {
+		query += ` LIMIT ?`
+		args = append(args, maxKeys+1)
+	}
+
 	rows, err := o.reader.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query objects: %w", err)
@@ -258,9 +266,6 @@ func (o *ObjectStore) ListObjects(ctx context.Context, bucket, prefix, delimiter
 			}
 		}
 
-		if key <= marker {
-			continue
-		}
 		if len(result.Objects)+len(result.CommonPrefixes) >= maxKeys {
 			result.IsTruncated = true
 			result.NextMarker = lastEntry

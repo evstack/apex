@@ -100,9 +100,11 @@ type S3APIConfig struct {
 	Enabled         bool   `yaml:"enabled"`
 	ListenAddr      string `yaml:"listen_addr"`
 	Region          string `yaml:"region"`
-	Namespace       string `yaml:"namespace"`         // Celestia namespace for S3 objects (hex)
-	AccessKeyID     string `yaml:"access_key_id"`     // optional SigV4 access key for the S3 API
-	SecretAccessKey string `yaml:"secret_access_key"` // optional SigV4 secret key for the S3 API
+	Namespace       string `yaml:"namespace"` // Celestia namespace for S3 objects (hex)
+	// AccessKeyID and SecretAccessKey are not read from YAML; set via
+	// APEX_S3_ACCESS_KEY_ID and APEX_S3_SECRET_ACCESS_KEY env vars.
+	AccessKeyID     string `yaml:"-"`
+	SecretAccessKey string `yaml:"-"`
 }
 
 // SubmissionConfig contains settings for the future blob submission pipeline.

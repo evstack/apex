@@ -105,8 +105,9 @@ s3:
   # Namespace used when S3 uploads are submitted to Celestia.
   namespace: ""
   # Optional SigV4 credentials enforced by the S3 API.
-  access_key_id: ""
-  secret_access_key: ""
+  # Set via env vars only (not in this file):
+  #   APEX_S3_ACCESS_KEY_ID=<key-id>
+  #   APEX_S3_SECRET_ACCESS_KEY=<secret>
 
 rpc:
   # Address for the JSON-RPC API server (HTTP/WebSocket)
@@ -171,9 +172,15 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
-	// Env var override.
+	// Env var overrides.
 	if token := os.Getenv("APEX_AUTH_TOKEN"); token != "" {
 		cfg.DataSource.AuthToken = token
+	}
+	if v := os.Getenv("APEX_S3_ACCESS_KEY_ID"); v != "" {
+		cfg.S3.AccessKeyID = v
+	}
+	if v := os.Getenv("APEX_S3_SECRET_ACCESS_KEY"); v != "" {
+		cfg.S3.SecretAccessKey = v
 	}
 	if err := validate(&cfg); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
@@ -407,7 +414,7 @@ func validateS3API(s3cfg *S3APIConfig, storage *StorageConfig, submission *Submi
 		s3cfg.Region = DefaultConfig().S3.Region
 	}
 	if (s3cfg.AccessKeyID == "") != (s3cfg.SecretAccessKey == "") {
-		return errors.New("s3.access_key_id and s3.secret_access_key must be provided together")
+		return errors.New("s3.access_key_id and s3.secret_access_key must be provided together (set via APEX_S3_ACCESS_KEY_ID and APEX_S3_SECRET_ACCESS_KEY)")
 	}
 	if !s3cfg.Enabled {
 		return nil

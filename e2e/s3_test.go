@@ -53,7 +53,10 @@ func TestS3ObjectLifecycle(t *testing.T) {
 		ConfirmTimeoutS: submissionConfirmTimeout,
 	})
 
-	proc := startApexProcess(t, apexBinary, configPath)
+	proc := startApexProcess(t, apexBinary, configPath,
+		"APEX_S3_ACCESS_KEY_ID="+accessKeyID,
+		"APEX_S3_SECRET_ACCESS_KEY="+secretKey,
+	)
 	defer proc.Stop(t)
 
 	waitForApexHTTP(t, proc, apexRPCAddr)

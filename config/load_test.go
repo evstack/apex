@@ -469,7 +469,9 @@ log:
 }
 
 func TestLoadRejectsPartialS3Credentials(t *testing.T) {
-	t.Parallel()
+	// Cannot run in parallel because t.Setenv modifies env vars.
+	t.Setenv("APEX_S3_ACCESS_KEY_ID", "app-key")
+	// APEX_S3_SECRET_ACCESS_KEY intentionally not set to test partial-credentials rejection.
 
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	content := `
@@ -484,7 +486,6 @@ storage:
 s3:
   enabled: true
   listen_addr: ":8333"
-  access_key_id: "app-key"
 
 log:
   level: "info"
@@ -498,7 +499,7 @@ log:
 	if err == nil {
 		t.Fatal("expected validation error, got nil")
 	}
-	if !strings.Contains(err.Error(), "s3.access_key_id and s3.secret_access_key must be provided together") {
+	if !strings.Contains(err.Error(), "s3.access_key_id and s3.secret_access_key must be provided together") { //nolint:staticcheck // partial message check
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

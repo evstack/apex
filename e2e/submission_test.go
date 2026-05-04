@@ -247,8 +247,6 @@ s3:
   listen_addr: "%s"
   region: "%s"
   namespace: "%s"
-  access_key_id: "%s"
-  secret_access_key: "%s"
 
 rpc:
   listen_addr: "%s"
@@ -288,8 +286,6 @@ log:
 		cfg.S3ListenAddr,
 		s3Region,
 		hex.EncodeToString(cfg.S3Namespace),
-		cfg.S3AccessKeyID,
-		cfg.S3SecretKey,
 		cfg.RPCListenAddr,
 		cfg.GRPCListenAddr,
 	)
@@ -307,11 +303,14 @@ type apexProcess struct {
 	logs    *bytes.Buffer
 }
 
-func startApexProcess(t *testing.T, binaryPath string, configPath string) *apexProcess {
+func startApexProcess(t *testing.T, binaryPath string, configPath string, envVars ...string) *apexProcess {
 	t.Helper()
 
 	cmd := exec.Command(binaryPath, "--config", configPath, "start")
 	cmd.Dir = ".."
+	if len(envVars) > 0 {
+		cmd.Env = append(os.Environ(), envVars...)
+	}
 
 	var logs bytes.Buffer
 	cmd.Stdout = &logs

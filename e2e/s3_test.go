@@ -3,6 +3,10 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"crypto/md5"  //nolint:gosec // MD5 required by S3 protocol for ETag
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"io"
 	"path/filepath"
 	"testing"
@@ -11,6 +15,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
+	apexs3 "github.com/evstack/apex/pkg/s3"
 )
 
 func TestS3ObjectLifecycle(t *testing.T) {
@@ -24,7 +29,7 @@ func TestS3ObjectLifecycle(t *testing.T) {
 	grpcAddr, chainID, signerKeyHex, signerAddress := startSubmissionTestChain(t, ctx)
 	namespace := testNamespace(t, []byte("apex-s3"))
 	data := []byte("apex s3 e2e")
-	commitment := mustBlobCommitment(t, namespace, data)
+	contentType := "text/plain"
 	accessKeyID := "settings-key"
 	secretKey := "settings-secret"
 
@@ -85,7 +90,7 @@ func TestS3ObjectLifecycle(t *testing.T) {
 		Bucket:      aws.String(bucket),
 		Key:         aws.String(key),
 		Body:        bytes.NewReader(data),
-		ContentType: aws.String("text/plain"),
+		ContentType: aws.String(contentType),
 	})
 	if err != nil {
 		t.Fatalf("PutObject: %v", err)
@@ -137,7 +142,26 @@ func TestS3ObjectLifecycle(t *testing.T) {
 		t.Fatalf("listed key = %q, want %q", got, key)
 	}
 
-	waitForIndexedBlob(t, proc, apexRPCAddr, commitment, data, namespace, signerAddress)
+	// Compute the CommitmentEnvelope that service.go submitted to Celestia.
+	// The envelope — not the raw object data — is what lands on-chain.
+	sha256sum := sha256.Sum256(data)
+	md5sum := md5.Sum(data) //nolint:gosec // MD5 required by S3 protocol for ETag
+	envelope := apexs3.CommitmentEnvelope{
+		Version:     1,
+		Bucket:      bucket,
+		Key:         key,
+		ContentType: contentType,
+		Size:        int64(len(data)),
+		SHA256:      hex.EncodeToString(sha256sum[:]),
+		ETag:        hex.EncodeToString(md5sum[:]),
+	}
+	envelopeBytes, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("marshal commitment envelope: %v", err)
+	}
+	envelopeCommitment := mustBlobCommitment(t, namespace, envelopeBytes)
+
+	waitForIndexedBlob(t, proc, apexRPCAddr, envelopeCommitment, envelopeBytes, namespace, signerAddress)
 
 	if _, err := client.DeleteObject(context.Background(), &awss3.DeleteObjectInput{
 		Bucket: aws.String(bucket),

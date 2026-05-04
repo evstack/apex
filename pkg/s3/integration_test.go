@@ -233,13 +233,10 @@ func TestIntegration_EmptyObject(t *testing.T) {
 	resp := doReq(t, client, http.MethodPut, base+"/bucket") //nolint:bodyclose // closed in closeBody
 	closeBody(t, resp)
 	resp = doPutObject(t, client, base+"/bucket/empty.txt", "", "text/plain") //nolint:bodyclose // closed in closeBody
-	assertStatus(t, resp, http.StatusOK)
-	closeBody(t, resp)
-
-	resp = doReq(t, client, http.MethodGet, base+"/bucket/empty.txt") //nolint:bodyclose // closed in readBody
-	assertStatus(t, resp, http.StatusOK)
-	if readBody(t, resp) != "" {
-		t.Error("expected empty body for empty object")
+	assertStatus(t, resp, http.StatusBadRequest)
+	body := readBody(t, resp)
+	if !strings.Contains(body, "InvalidRequest") {
+		t.Errorf("expected InvalidRequest error, got: %s", body)
 	}
 }
 

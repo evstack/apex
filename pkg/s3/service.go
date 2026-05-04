@@ -21,6 +21,7 @@ var (
 	ErrBucketNotEmpty      = errors.New("bucket not empty")
 	ErrBucketAlreadyExists = errors.New("bucket already exists")
 	ErrInvalidBucketName   = errors.New("bucket name is invalid: must be 3-63 lowercase alphanumeric characters or hyphens, start and end with a letter or number, and not be an IP address")
+	ErrEmptyObject         = errors.New("empty objects are not supported")
 	ErrObjectNotFound      = errors.New("object not found")
 	ErrObjectTooLarge      = errors.New("object too large")
 	ErrKeyTooLong          = errors.New("object key exceeds maximum length of 1024 bytes")
@@ -82,11 +83,9 @@ func (s *Service) HeadBucket(ctx context.Context, name string) (*Bucket, error) 
 	return s.store.GetBucket(ctx, name)
 }
 
-// PutObject stores an object. Non-empty objects are submitted to Celestia
-// first and stored only on success. Empty objects (0 bytes) are stored
-// locally without Celestia submission to preserve S3 tool compatibility
-// (e.g. folder placeholder keys); they will have Height=0 and no commitments.
-// Returns ErrReadOnly if no submitter is configured.
+// PutObject stores an object after submitting its commitment envelope to
+// Celestia. Empty objects are rejected. Returns ErrReadOnly if no submitter is
+// configured.
 func (s *Service) PutObject(ctx context.Context, bucket, key string, r io.Reader, contentType string) (*Object, error) {
 	if s.submitter == nil {
 		return nil, ErrReadOnly
@@ -109,39 +108,38 @@ func (s *Service) PutObject(ctx context.Context, bucket, key string, r io.Reader
 	if len(data) > maxObjectSize {
 		return nil, ErrObjectTooLarge
 	}
+	if len(data) == 0 {
+		return nil, ErrEmptyObject
+	}
 
-	var sha256Hex, etag string
+	sum := sha256pkg.Sum256(data)
+	sha256Hex := hex.EncodeToString(sum[:])
 
-	if len(data) > 0 {
-		sum := sha256pkg.Sum256(data)
-		sha256Hex = hex.EncodeToString(sum[:])
+	md5sum := md5.Sum(data) //nolint:gosec // MD5 required by S3 protocol for ETag
+	etag := hex.EncodeToString(md5sum[:])
 
-		md5sum := md5.Sum(data) //nolint:gosec // MD5 required by S3 protocol for ETag
-		etag = hex.EncodeToString(md5sum[:])
+	envelope := CommitmentEnvelope{
+		Version:     1,
+		Bucket:      bucket,
+		Key:         key,
+		ContentType: contentType,
+		Size:        int64(len(data)),
+		SHA256:      sha256Hex,
+		ETag:        etag,
+	}
+	envelopeBytes, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("marshal commitment envelope: %w", err)
+	}
 
-		envelope := CommitmentEnvelope{
-			Version:     1,
-			Bucket:      bucket,
-			Key:         key,
-			ContentType: contentType,
-			Size:        int64(len(data)),
-			SHA256:      sha256Hex,
-			ETag:        etag,
-		}
-		envelopeBytes, err := json.Marshal(envelope)
-		if err != nil {
-			return nil, fmt.Errorf("marshal commitment envelope: %w", err)
-		}
-
-		blob, err := submit.BuildBlob(s.namespace, envelopeBytes, 0, nil)
-		if err != nil {
-			return nil, fmt.Errorf("build blob: %w", err)
-		}
-		if _, submitErr := s.submitter.Submit(ctx, &submit.Request{
-			Blobs: []submit.Blob{blob},
-		}); submitErr != nil {
-			return nil, fmt.Errorf("submit to celestia: %w", submitErr)
-		}
+	blob, err := submit.BuildBlob(s.namespace, envelopeBytes, 0, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build blob: %w", err)
+	}
+	if _, submitErr := s.submitter.Submit(ctx, &submit.Request{
+		Blobs: []submit.Blob{blob},
+	}); submitErr != nil {
+		return nil, fmt.Errorf("submit to celestia: %w", submitErr)
 	}
 
 	// Write to store only after successful Celestia submission.

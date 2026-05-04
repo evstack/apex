@@ -142,6 +142,23 @@ func TestServer_PutGetObject(t *testing.T) {
 	}
 }
 
+func TestServer_PutObject_EmptyRejected(t *testing.T) {
+	server, store := setupHTTPTestServer()
+	_ = store.PutBucket(context.Background(), "test-bucket")
+
+	req := httptest.NewRequest(http.MethodPut, "/test-bucket/empty.txt", bytes.NewReader(nil))
+	req.Header.Set("Content-Type", "text/plain")
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "<Code>InvalidRequest</Code>") {
+		t.Fatalf("expected InvalidRequest error, got: %s", rec.Body.String())
+	}
+}
+
 func TestServer_GetObject_NotFound(t *testing.T) {
 	server, store := setupHTTPTestServer()
 	_ = store.PutBucket(context.Background(), "test-bucket")

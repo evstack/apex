@@ -370,7 +370,7 @@ func (f *failingSubmitter) Submit(context.Context, *submit.Request) (*submit.Res
 	return nil, errors.New("celestia unavailable")
 }
 
-func TestService_PutObject_EmptySkipsSubmission(t *testing.T) {
+func TestService_PutObject_EmptyRejected(t *testing.T) {
 	store := newMockStore()
 	sub := &mockSubmitter{}
 	svc := NewService(store, sub, testNamespace())
@@ -381,11 +381,14 @@ func TestService_PutObject_EmptySkipsSubmission(t *testing.T) {
 	}
 
 	_, err := svc.PutObject(ctx, "test-bucket", "empty", bytes.NewReader([]byte{}), "text/plain")
-	if err != nil {
-		t.Fatalf("PutObject failed: %v", err)
+	if !errors.Is(err, ErrEmptyObject) {
+		t.Fatalf("expected ErrEmptyObject, got %v", err)
 	}
 	if sub.calls != 0 {
 		t.Errorf("expected 0 submit calls for empty object, got %d", sub.calls)
+	}
+	if _, _, getErr := svc.GetObject(ctx, "test-bucket", "empty"); !errors.Is(getErr, ErrObjectNotFound) {
+		t.Fatalf("expected object not to be stored, got %v", getErr)
 	}
 }
 

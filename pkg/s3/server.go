@@ -406,6 +406,8 @@ func (s *Server) writeS3Error(w http.ResponseWriter, err error) {
 		s.writeError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", err.Error())
 	case errors.Is(err, ErrInvalidBucketName):
 		s.writeError(w, http.StatusBadRequest, "InvalidBucketName", err.Error())
+	case errors.Is(err, ErrEmptyObject):
+		s.writeError(w, http.StatusBadRequest, "InvalidRequest", err.Error())
 	case errors.Is(err, ErrKeyTooLong):
 		s.writeError(w, http.StatusBadRequest, "KeyTooLongError", "Your key is too long")
 	case errors.Is(err, ErrBucketNotFound):

@@ -389,7 +389,29 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 
 	coord := syncer.New(db, dataFetcher, coordOpts...)
 
-	// Build HTTP mux: mount health endpoints alongside JSON-RPC.
+	httpSrv, grpcSrv, err := startRPCServers(ctx, cfg, svc, coord, db, notifier, s3Srv)
+	if err != nil {
+		return err
+	}
+
+	log.Info().
+		Int("namespaces", len(namespaces)).
+		Uint64("start_height", cfg.Sync.StartHeight).
+		Msg("sync coordinator starting")
+
+	err = coord.Run(ctx)
+
+	gracefulShutdown(httpSrv, grpcSrv, metricsSrv, profileSrv, s3Srv)
+
+	if err != nil && !errors.Is(err, context.Canceled) {
+		return fmt.Errorf("coordinator: %w", err)
+	}
+
+	log.Info().Msg("apex indexer stopped")
+	return nil
+}
+
+func startRPCServers(ctx context.Context, cfg *config.Config, svc *api.Service, coord *syncer.Coordinator, db store.Store, notifier *api.Notifier, s3Srv *http.Server) (*http.Server, *grpc.Server, error) {
 	rpcServer := jsonrpcapi.NewServer(svc, log.Logger)
 	healthHandler := api.NewHealthHandler(coord, db, notifier, version)
 
@@ -412,7 +434,6 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		}
 	}()
 
-	// Start gRPC server.
 	grpcSrv := grpcapi.NewServer(svc, log.Logger)
 	lis, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.RPC.GRPCListenAddr)
 	if err != nil {
@@ -420,7 +441,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		if s3Srv != nil {
 			_ = s3Srv.Close()
 		}
-		return fmt.Errorf("listen gRPC: %w", err)
+		return nil, nil, fmt.Errorf("listen gRPC: %w", err)
 	}
 
 	go func() {
@@ -430,21 +451,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		}
 	}()
 
-	log.Info().
-		Int("namespaces", len(namespaces)).
-		Uint64("start_height", cfg.Sync.StartHeight).
-		Msg("sync coordinator starting")
-
-	err = coord.Run(ctx)
-
-	gracefulShutdown(httpSrv, grpcSrv, metricsSrv, profileSrv, s3Srv)
-
-	if err != nil && !errors.Is(err, context.Canceled) {
-		return fmt.Errorf("coordinator: %w", err)
-	}
-
-	log.Info().Msg("apex indexer stopped")
-	return nil
+	return httpSrv, grpcSrv, nil
 }
 
 func openBlobSubmitter(cfg *config.Config) (*submit.DirectSubmitter, error) {

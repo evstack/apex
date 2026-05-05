@@ -17,6 +17,7 @@ type Config struct {
 	Profiling    ProfilingConfig    `yaml:"profiling"`
 	Log          LogConfig          `yaml:"log"`
 	Submission   SubmissionConfig   `yaml:"submission"`
+	S3           S3APIConfig        `yaml:"s3"`
 }
 
 // DataSourceConfig configures the Celestia data source.
@@ -94,6 +95,18 @@ type LogConfig struct {
 	Format string `yaml:"format"`
 }
 
+// S3APIConfig configures the S3-compatible API server.
+type S3APIConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	ListenAddr string `yaml:"listen_addr"`
+	Region     string `yaml:"region"`
+	Namespace  string `yaml:"namespace"` // Celestia namespace for S3 objects (hex)
+	// AccessKeyID and SecretAccessKey are not read from YAML; set via
+	// APEX_S3_ACCESS_KEY_ID and APEX_S3_SECRET_ACCESS_KEY env vars.
+	AccessKeyID     string `yaml:"-"`
+	SecretAccessKey string `yaml:"-"`
+}
+
 // SubmissionConfig contains settings for the future blob submission pipeline.
 type SubmissionConfig struct {
 	Enabled                 bool    `yaml:"enabled"`
@@ -154,6 +167,11 @@ func DefaultConfig() Config {
 		Log: LogConfig{
 			Level:  "info",
 			Format: "json",
+		},
+		S3: S3APIConfig{
+			Enabled:    false,
+			ListenAddr: ":8333",
+			Region:     "us-east-1",
 		},
 	}
 }

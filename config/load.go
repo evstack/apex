@@ -95,6 +95,20 @@ storage:
   #   endpoint: ""          # custom endpoint for MinIO, R2, etc.
   #   chunk_size: 64        # heights per S3 object
 
+s3:
+  # Enable the S3-compatible HTTP API backed by SQLite object storage.
+  enabled: false
+  # Address for the S3-compatible API server.
+  listen_addr: ":8333"
+  # AWS region reported to clients.
+  region: "us-east-1"
+  # Namespace used when S3 uploads are submitted to Celestia.
+  namespace: ""
+  # Optional SigV4 credentials enforced by the S3 API.
+  # Set via env vars only (not in this file):
+  #   APEX_S3_ACCESS_KEY_ID=<key-id>
+  #   APEX_S3_SECRET_ACCESS_KEY=<secret>
+
 rpc:
   # Address for the JSON-RPC API server (HTTP/WebSocket)
   listen_addr: ":8080"
@@ -158,9 +172,15 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
-	// Env var override.
+	// Env var overrides.
 	if token := os.Getenv("APEX_AUTH_TOKEN"); token != "" {
 		cfg.DataSource.AuthToken = token
+	}
+	if v := os.Getenv("APEX_S3_ACCESS_KEY_ID"); v != "" {
+		cfg.S3.AccessKeyID = v
+	}
+	if v := os.Getenv("APEX_S3_SECRET_ACCESS_KEY"); v != "" {
+		cfg.S3.SecretAccessKey = v
 	}
 	if err := validate(&cfg); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
@@ -290,6 +310,9 @@ func validate(cfg *Config) error {
 	if err := validateSubmission(&cfg.Submission); err != nil {
 		return err
 	}
+	if err := validateS3API(&cfg.S3, &cfg.Storage, &cfg.Submission); err != nil {
+		return err
+	}
 	if !validLogLevels[cfg.Log.Level] {
 		return fmt.Errorf("log.level %q is invalid; must be one of trace/debug/info/warn/error/fatal/panic", cfg.Log.Level)
 	}
@@ -377,6 +400,42 @@ func validateSubmission(s *SubmissionConfig) error {
 	}
 	if s.MaxGasPrice > 0 && s.GasPrice > s.MaxGasPrice {
 		return errors.New("submission.gas_price must not exceed submission.max_gas_price")
+	}
+	return nil
+}
+
+func validateS3API(s3cfg *S3APIConfig, storage *StorageConfig, submission *SubmissionConfig) error {
+	s3cfg.ListenAddr = strings.TrimSpace(s3cfg.ListenAddr)
+	s3cfg.Region = strings.TrimSpace(s3cfg.Region)
+	s3cfg.Namespace = strings.TrimSpace(s3cfg.Namespace)
+	s3cfg.AccessKeyID = strings.TrimSpace(s3cfg.AccessKeyID)
+	s3cfg.SecretAccessKey = strings.TrimSpace(s3cfg.SecretAccessKey)
+	if s3cfg.Region == "" {
+		s3cfg.Region = DefaultConfig().S3.Region
+	}
+	if !s3cfg.Enabled {
+		return nil
+	}
+	if (s3cfg.AccessKeyID == "") != (s3cfg.SecretAccessKey == "") {
+		return errors.New("s3.access_key_id and s3.secret_access_key must be provided together (set via APEX_S3_ACCESS_KEY_ID and APEX_S3_SECRET_ACCESS_KEY)")
+	}
+	if s3cfg.ListenAddr == "" {
+		return errors.New("s3.listen_addr is required when s3.enabled is true")
+	}
+	if storage.Type != "sqlite" && storage.Type != "" {
+		return errors.New("s3.enabled requires storage.type to be \"sqlite\"")
+	}
+	if s3cfg.Namespace != "" {
+		ns, err := types.NamespaceFromHex(s3cfg.Namespace)
+		if err != nil {
+			return fmt.Errorf("s3.namespace is invalid: %w", err)
+		}
+		if err := ns.ValidateForBlob(); err != nil {
+			return fmt.Errorf("s3.namespace is invalid: %w", err)
+		}
+	}
+	if submission.Enabled && s3cfg.Namespace == "" {
+		return errors.New("s3.namespace is required when both s3.enabled and submission.enabled are true")
 	}
 	return nil
 }

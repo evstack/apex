@@ -3,8 +3,38 @@ package submit
 import (
 	"fmt"
 
+	"github.com/celestiaorg/go-square/merkle"
+	"github.com/celestiaorg/go-square/v3/inclusion"
 	share "github.com/celestiaorg/go-square/v3/share"
+	"github.com/evstack/apex/pkg/types"
 )
+
+const subtreeRootThreshold = 64
+
+// BuildBlob validates a Celestia blob payload, computes its commitment, and
+// returns the Apex-owned submission shape.
+func BuildBlob(namespace types.Namespace, data []byte, shareVersion uint32, signer []byte) (Blob, error) {
+	blob := Blob{
+		Namespace:    namespace,
+		Data:         data,
+		ShareVersion: shareVersion,
+		Signer:       signer,
+		Index:        -1,
+	}
+
+	squareBlob, err := convertSquareBlob(blob)
+	if err != nil {
+		return Blob{}, err
+	}
+
+	commitment, err := inclusion.CreateCommitment(squareBlob, merkle.HashFromByteSlices, subtreeRootThreshold)
+	if err != nil {
+		return Blob{}, fmt.Errorf("create blob commitment: %w", err)
+	}
+
+	blob.Commitment = commitment
+	return blob, nil
+}
 
 func convertSquareBlob(blob Blob) (*share.Blob, error) {
 	namespace, err := share.NewNamespaceFromBytes(blob.Namespace[:])

@@ -115,6 +115,7 @@ var allMigrations = []migrationStep{
 	{version: 1, file: "migrations/001_init.sql"},
 	{version: 2, file: "migrations/002_commitment_index.sql"},
 	{version: 3, file: "migrations/003_blob_index_unique.sql"},
+	{version: 4, file: "migrations/004_s3_objects.sql"},
 }
 
 func (s *SQLiteStore) migrate() error {

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/evstack/apex/pkg/fetch"
 	"github.com/evstack/apex/pkg/metrics"
 	"github.com/evstack/apex/pkg/profile"
+	apexs3 "github.com/evstack/apex/pkg/s3"
 	"github.com/evstack/apex/pkg/store"
 	"github.com/evstack/apex/pkg/submit"
 	syncer "github.com/evstack/apex/pkg/sync"
@@ -214,6 +216,83 @@ func setStoreMetrics(db store.Store, rec metrics.Recorder) {
 	}
 }
 
+func setupS3Server(ctx context.Context, cfg *config.Config, db store.Store, blobSubmitter submit.Submitter, log zerolog.Logger) (*http.Server, error) {
+	if !cfg.S3.Enabled {
+		return nil, nil
+	}
+
+	if cfg.S3.AccessKeyID == "" && cfg.S3.SecretAccessKey == "" {
+		warnLog := log.Warn().Str("addr", cfg.S3.ListenAddr)
+		if isLoopbackBindAddr(cfg.S3.ListenAddr) {
+			warnLog.Msg("S3 API authentication is disabled; restrict access to trusted local clients or set APEX_S3_ACCESS_KEY_ID and APEX_S3_SECRET_ACCESS_KEY")
+		} else {
+			warnLog.Msg("S3 API authentication is disabled on a non-loopback bind; set APEX_S3_ACCESS_KEY_ID and APEX_S3_SECRET_ACCESS_KEY or place Apex behind a trusted authenticated proxy")
+		}
+	}
+
+	var ns types.Namespace
+	if cfg.S3.Namespace != "" {
+		var err error
+		ns, err = types.NamespaceFromHex(cfg.S3.Namespace)
+		if err != nil {
+			return nil, fmt.Errorf("parse S3 namespace: %w", err)
+		}
+	}
+
+	sqliteDB, ok := db.(*store.SQLiteStore)
+	if !ok {
+		return nil, fmt.Errorf("S3 API requires SQLite store, got %T", db)
+	}
+
+	objStore := store.NewObjectStore(sqliteDB)
+	s3Svc := apexs3.NewService(objStore, blobSubmitter, ns)
+	s3Srv := apexs3.NewServer(s3Svc, cfg.S3.Region, cfg.S3.AccessKeyID, cfg.S3.SecretAccessKey, log)
+
+	lis, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.S3.ListenAddr)
+	if err != nil {
+		return nil, fmt.Errorf("S3 API: listen %s: %w", cfg.S3.ListenAddr, err)
+	}
+
+	httpSrv := &http.Server{
+		Handler:           s3Srv,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	go func() {
+		log.Info().Str("addr", cfg.S3.ListenAddr).Msg("S3 API server listening")
+		if err := httpSrv.Serve(lis); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error().Err(err).Msg("S3 API server error")
+		}
+	}()
+
+	return httpSrv, nil
+}
+
+func isLoopbackBindAddr(addr string) bool {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return false
+	}
+	// Unix sockets are always local.
+	if strings.HasPrefix(addr, "/") || strings.HasPrefix(addr, "unix:") {
+		return true
+	}
+	host := addr
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]") // strip IPv6 brackets
+	if host == "" {
+		return false // bare ":port" binds all interfaces
+	}
+	lower := strings.ToLower(host)
+	if lower == "localhost" || strings.HasSuffix(lower, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func persistNamespaces(ctx context.Context, db store.Store, namespaces []types.Namespace) error {
 	for _, ns := range namespaces {
 		if err := db.PutNamespace(ctx, ns); err != nil {
@@ -282,22 +361,59 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	}
 	defer dataFetcher.Close() //nolint:errcheck
 
-	svc, notifier, closeSubmitter, err := setupAPIService(cfg, db, dataFetcher, proofFwd, rec)
+	directSubmitter, err := openBlobSubmitter(cfg)
 	if err != nil {
 		return err
 	}
-	defer closeSubmitter()
+
+	blobSubmitter := normalizeBlobSubmitter(directSubmitter)
+	if directSubmitter != nil {
+		defer directSubmitter.Close() //nolint:errcheck
+	}
+
+	// Setup S3 API server if enabled.
+	s3Srv, err := setupS3Server(ctx, cfg, db, blobSubmitter, log.Logger)
+	if err != nil {
+		return fmt.Errorf("setup S3 server: %w", err)
+	}
+
+	svc, notifier := setupAPIService(cfg, db, dataFetcher, proofFwd, rec, blobSubmitter)
 
 	// Build and run the sync coordinator with observer hook.
 	coordOpts, closeBackfill, err := buildCoordinatorOptions(cfg, notifier, rec)
 	if err != nil {
+		if s3Srv != nil {
+			_ = s3Srv.Close()
+		}
 		return err
 	}
 	defer closeBackfill()
 
 	coord := syncer.New(db, dataFetcher, coordOpts...)
 
-	// Build HTTP mux: mount health endpoints alongside JSON-RPC.
+	httpSrv, grpcSrv, err := startRPCServers(ctx, cfg, svc, coord, db, notifier, s3Srv)
+	if err != nil {
+		return err
+	}
+
+	log.Info().
+		Int("namespaces", len(namespaces)).
+		Uint64("start_height", cfg.Sync.StartHeight).
+		Msg("sync coordinator starting")
+
+	err = coord.Run(ctx)
+
+	gracefulShutdown(httpSrv, grpcSrv, metricsSrv, profileSrv, s3Srv)
+
+	if err != nil && !errors.Is(err, context.Canceled) {
+		return fmt.Errorf("coordinator: %w", err)
+	}
+
+	log.Info().Msg("apex indexer stopped")
+	return nil
+}
+
+func startRPCServers(ctx context.Context, cfg *config.Config, svc *api.Service, coord *syncer.Coordinator, db store.Store, notifier *api.Notifier, s3Srv *http.Server) (*http.Server, *grpc.Server, error) {
 	rpcServer := jsonrpcapi.NewServer(svc, log.Logger)
 	healthHandler := api.NewHealthHandler(coord, db, notifier, version)
 
@@ -320,12 +436,14 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		}
 	}()
 
-	// Start gRPC server.
 	grpcSrv := grpcapi.NewServer(svc, log.Logger)
 	lis, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.RPC.GRPCListenAddr)
 	if err != nil {
 		_ = httpSrv.Close()
-		return fmt.Errorf("listen gRPC: %w", err)
+		if s3Srv != nil {
+			_ = s3Srv.Close()
+		}
+		return nil, nil, fmt.Errorf("listen gRPC: %w", err)
 	}
 
 	go func() {
@@ -335,21 +453,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 		}
 	}()
 
-	log.Info().
-		Int("namespaces", len(namespaces)).
-		Uint64("start_height", cfg.Sync.StartHeight).
-		Msg("sync coordinator starting")
-
-	err = coord.Run(ctx)
-
-	gracefulShutdown(httpSrv, grpcSrv, metricsSrv, profileSrv)
-
-	if err != nil && !errors.Is(err, context.Canceled) {
-		return fmt.Errorf("coordinator: %w", err)
-	}
-
-	log.Info().Msg("apex indexer stopped")
-	return nil
+	return httpSrv, grpcSrv, nil
 }
 
 func openBlobSubmitter(cfg *config.Config) (*submit.DirectSubmitter, error) {
@@ -385,19 +489,14 @@ func openBlobSubmitter(cfg *config.Config) (*submit.DirectSubmitter, error) {
 	return blobSubmitter, nil
 }
 
-func setupAPIService(cfg *config.Config, db store.Store, dataFetcher fetch.DataFetcher, proofFwd fetch.ProofForwarder, rec metrics.Recorder) (*api.Service, *api.Notifier, func(), error) {
-	blobSubmitter, err := openBlobSubmitter(cfg)
-	if err != nil {
-		return nil, nil, nil, err
+func normalizeBlobSubmitter(directSubmitter *submit.DirectSubmitter) submit.Submitter {
+	if directSubmitter == nil {
+		return nil
 	}
+	return directSubmitter
+}
 
-	closeSubmitter := func() {}
-	if blobSubmitter != nil {
-		closeSubmitter = func() {
-			_ = blobSubmitter.Close()
-		}
-	}
-
+func setupAPIService(cfg *config.Config, db store.Store, dataFetcher fetch.DataFetcher, proofFwd fetch.ProofForwarder, rec metrics.Recorder, blobSubmitter submit.Submitter) (*api.Service, *api.Notifier) {
 	notifier := api.NewNotifier(cfg.Subscription.BufferSize, cfg.Subscription.MaxSubscribers, log.Logger)
 	notifier.SetMetrics(rec)
 
@@ -407,7 +506,7 @@ func setupAPIService(cfg *config.Config, db store.Store, dataFetcher fetch.DataF
 	}
 
 	svc := api.NewService(db, dataFetcher, proofFwd, notifier, log.Logger, svcOpts...)
-	return svc, notifier, closeSubmitter, nil
+	return svc, notifier
 }
 
 func buildCoordinatorOptions(cfg *config.Config, notifier *api.Notifier, rec metrics.Recorder) ([]syncer.Option, func(), error) {
@@ -436,7 +535,7 @@ func buildCoordinatorOptions(cfg *config.Config, notifier *api.Notifier, rec met
 	return coordOpts, closeBackfill, nil
 }
 
-func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *metrics.Server, profileSrv *profile.Server) {
+func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *metrics.Server, profileSrv *profile.Server, s3Srv *http.Server) {
 	stopped := make(chan struct{})
 	go func() {
 		grpcSrv.GracefulStop()
@@ -455,6 +554,12 @@ func gracefulShutdown(httpSrv *http.Server, grpcSrv *grpc.Server, metricsSrv *me
 	defer shutdownCancel()
 	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("JSON-RPC server shutdown error")
+	}
+
+	if s3Srv != nil {
+		if err := s3Srv.Shutdown(shutdownCtx); err != nil {
+			log.Error().Err(err).Msg("S3 API server shutdown error")
+		}
 	}
 
 	if metricsSrv != nil {

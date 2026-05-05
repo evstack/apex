@@ -47,5 +47,9 @@ check: tidy-check lint test build
 e2e:
     cd e2e && go test -race -count=1 -timeout 20m ./...
 
+# Run the Docker-backed S3 end-to-end test only (requires Docker).
+e2e-s3:
+    cd e2e && go test -race -count=1 -timeout 20m -run TestS3ObjectLifecycle ./...
+
 # Run the full CI pipeline locally: lint + unit tests + build + e2e (requires Docker).
 ci: check e2e

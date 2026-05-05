@@ -216,7 +216,7 @@ func setStoreMetrics(db store.Store, rec metrics.Recorder) {
 	}
 }
 
-func setupS3Server(cfg *config.Config, db store.Store, blobSubmitter submit.Submitter, log zerolog.Logger) (*http.Server, error) {
+func setupS3Server(ctx context.Context, cfg *config.Config, db store.Store, blobSubmitter submit.Submitter, log zerolog.Logger) (*http.Server, error) {
 	if !cfg.S3.Enabled {
 		return nil, nil
 	}
@@ -248,7 +248,7 @@ func setupS3Server(cfg *config.Config, db store.Store, blobSubmitter submit.Subm
 	s3Svc := apexs3.NewService(objStore, blobSubmitter, ns)
 	s3Srv := apexs3.NewServer(s3Svc, cfg.S3.Region, cfg.S3.AccessKeyID, cfg.S3.SecretAccessKey, log)
 
-	lis, err := net.Listen("tcp", cfg.S3.ListenAddr)
+	lis, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.S3.ListenAddr)
 	if err != nil {
 		return nil, fmt.Errorf("S3 API: listen %s: %w", cfg.S3.ListenAddr, err)
 	}
@@ -370,7 +370,7 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	}
 
 	// Setup S3 API server if enabled.
-	s3Srv, err := setupS3Server(cfg, db, blobSubmitter, log.Logger)
+	s3Srv, err := setupS3Server(ctx, cfg, db, blobSubmitter, log.Logger)
 	if err != nil {
 		return fmt.Errorf("setup S3 server: %w", err)
 	}
@@ -380,6 +380,9 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	// Build and run the sync coordinator with observer hook.
 	coordOpts, closeBackfill, err := buildCoordinatorOptions(cfg, notifier, rec)
 	if err != nil {
+		if s3Srv != nil {
+			_ = s3Srv.Close()
+		}
 		return err
 	}
 	defer closeBackfill()
@@ -414,6 +417,9 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	lis, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.RPC.GRPCListenAddr)
 	if err != nil {
 		_ = httpSrv.Close()
+		if s3Srv != nil {
+			_ = s3Srv.Close()
+		}
 		return fmt.Errorf("listen gRPC: %w", err)
 	}
 

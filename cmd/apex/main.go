@@ -361,12 +361,14 @@ func runIndexer(ctx context.Context, cfg *config.Config) error {
 	}
 	defer dataFetcher.Close() //nolint:errcheck
 
-	blobSubmitter, err := openBlobSubmitter(cfg)
+	directSubmitter, err := openBlobSubmitter(cfg)
 	if err != nil {
 		return err
 	}
-	if blobSubmitter != nil {
-		defer blobSubmitter.Close() //nolint:errcheck
+
+	blobSubmitter := normalizeBlobSubmitter(directSubmitter)
+	if directSubmitter != nil {
+		defer directSubmitter.Close() //nolint:errcheck
 	}
 
 	// Setup S3 API server if enabled.
@@ -485,6 +487,13 @@ func openBlobSubmitter(cfg *config.Config) (*submit.DirectSubmitter, error) {
 	}
 
 	return blobSubmitter, nil
+}
+
+func normalizeBlobSubmitter(directSubmitter *submit.DirectSubmitter) submit.Submitter {
+	if directSubmitter == nil {
+		return nil
+	}
+	return directSubmitter
 }
 
 func setupAPIService(cfg *config.Config, db store.Store, dataFetcher fetch.DataFetcher, proofFwd fetch.ProofForwarder, rec metrics.Recorder, blobSubmitter submit.Submitter) (*api.Service, *api.Notifier) {

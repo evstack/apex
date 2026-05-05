@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/evstack/apex/pkg/submit"
+)
 
 func TestIsLoopbackBindAddr(t *testing.T) {
 	t.Parallel()
@@ -30,5 +34,14 @@ func TestIsLoopbackBindAddr(t *testing.T) {
 				t.Fatalf("isLoopbackBindAddr(%q) = %v, want %v", tt.addr, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNormalizeBlobSubmitter(t *testing.T) {
+	t.Parallel()
+
+	var directSubmitter *submit.DirectSubmitter
+	if got := normalizeBlobSubmitter(directSubmitter); got != nil {
+		t.Fatalf("normalizeBlobSubmitter(nil) = %#v, want nil", got)
 	}
 }

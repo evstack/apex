@@ -23,7 +23,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.50.12
 	github.com/cosmos/ibc-go/v8 v8.7.0
 	github.com/evstack/apex v0.0.0-00010101000000-000000000000
-	google.golang.org/grpc v1.79.1
+	google.golang.org/grpc v1.79.3
 )
 
 require (

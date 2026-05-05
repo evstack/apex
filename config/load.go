@@ -413,11 +413,11 @@ func validateS3API(s3cfg *S3APIConfig, storage *StorageConfig, submission *Submi
 	if s3cfg.Region == "" {
 		s3cfg.Region = DefaultConfig().S3.Region
 	}
-	if (s3cfg.AccessKeyID == "") != (s3cfg.SecretAccessKey == "") {
-		return errors.New("s3.access_key_id and s3.secret_access_key must be provided together (set via APEX_S3_ACCESS_KEY_ID and APEX_S3_SECRET_ACCESS_KEY)")
-	}
 	if !s3cfg.Enabled {
 		return nil
+	}
+	if (s3cfg.AccessKeyID == "") != (s3cfg.SecretAccessKey == "") {
+		return errors.New("s3.access_key_id and s3.secret_access_key must be provided together (set via APEX_S3_ACCESS_KEY_ID and APEX_S3_SECRET_ACCESS_KEY)")
 	}
 	if s3cfg.ListenAddr == "" {
 		return errors.New("s3.listen_addr is required when s3.enabled is true")

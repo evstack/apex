@@ -248,15 +248,19 @@ func setupS3Server(cfg *config.Config, db store.Store, blobSubmitter submit.Subm
 	s3Svc := apexs3.NewService(objStore, blobSubmitter, ns)
 	s3Srv := apexs3.NewServer(s3Svc, cfg.S3.Region, cfg.S3.AccessKeyID, cfg.S3.SecretAccessKey, log)
 
+	lis, err := net.Listen("tcp", cfg.S3.ListenAddr)
+	if err != nil {
+		return nil, fmt.Errorf("S3 API: listen %s: %w", cfg.S3.ListenAddr, err)
+	}
+
 	httpSrv := &http.Server{
-		Addr:              cfg.S3.ListenAddr,
 		Handler:           s3Srv,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {
 		log.Info().Str("addr", cfg.S3.ListenAddr).Msg("S3 API server listening")
-		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := httpSrv.Serve(lis); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error().Err(err).Msg("S3 API server error")
 		}
 	}()

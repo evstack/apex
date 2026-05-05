@@ -84,7 +84,7 @@ func TestS3ObjectLifecycle(t *testing.T) {
 	bucket := "apex-s3-e2e"
 	key := "hello.txt"
 
-	listBuckets, err := client.ListBuckets(context.Background(), &awss3.ListBucketsInput{})
+	listBuckets, err := client.ListBuckets(ctx, &awss3.ListBucketsInput{})
 	if err != nil {
 		t.Fatalf("ListBuckets: %v", err)
 	}
@@ -92,13 +92,13 @@ func TestS3ObjectLifecycle(t *testing.T) {
 		t.Fatalf("expected no buckets, got %d", len(listBuckets.Buckets))
 	}
 
-	if _, err := client.CreateBucket(context.Background(), &awss3.CreateBucketInput{
+	if _, err := client.CreateBucket(ctx, &awss3.CreateBucketInput{
 		Bucket: aws.String(bucket),
 	}); err != nil {
 		t.Fatalf("CreateBucket: %v", err)
 	}
 
-	putOut, err := client.PutObject(context.Background(), &awss3.PutObjectInput{
+	putOut, err := client.PutObject(ctx, &awss3.PutObjectInput{
 		Bucket:      aws.String(bucket),
 		Key:         aws.String(key),
 		Body:        bytes.NewReader(data),
@@ -111,7 +111,7 @@ func TestS3ObjectLifecycle(t *testing.T) {
 		t.Fatal("expected ETag from PutObject")
 	}
 
-	headOut, err := client.HeadObject(context.Background(), &awss3.HeadObjectInput{
+	headOut, err := client.HeadObject(ctx, &awss3.HeadObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
@@ -125,7 +125,7 @@ func TestS3ObjectLifecycle(t *testing.T) {
 		t.Fatal("expected ETag from HeadObject")
 	}
 
-	getOut, err := client.GetObject(context.Background(), &awss3.GetObjectInput{
+	getOut, err := client.GetObject(ctx, &awss3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
@@ -141,7 +141,7 @@ func TestS3ObjectLifecycle(t *testing.T) {
 		t.Fatalf("object data = %q, want %q", gotData, data)
 	}
 
-	listObjects, err := client.ListObjectsV2(context.Background(), &awss3.ListObjectsV2Input{
+	listObjects, err := client.ListObjectsV2(ctx, &awss3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
@@ -175,20 +175,20 @@ func TestS3ObjectLifecycle(t *testing.T) {
 
 	waitForIndexedBlob(t, proc, apexRPCAddr, envelopeCommitment, envelopeBytes, namespace, signerAddress)
 
-	if _, err := client.DeleteObject(context.Background(), &awss3.DeleteObjectInput{
+	if _, err := client.DeleteObject(ctx, &awss3.DeleteObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	}); err != nil {
 		t.Fatalf("DeleteObject: %v", err)
 	}
 
-	if _, err := client.DeleteBucket(context.Background(), &awss3.DeleteBucketInput{
+	if _, err := client.DeleteBucket(ctx, &awss3.DeleteBucketInput{
 		Bucket: aws.String(bucket),
 	}); err != nil {
 		t.Fatalf("DeleteBucket: %v", err)
 	}
 
-	listBuckets, err = client.ListBuckets(context.Background(), &awss3.ListBucketsInput{})
+	listBuckets, err = client.ListBuckets(ctx, &awss3.ListBucketsInput{})
 	if err != nil {
 		t.Fatalf("ListBuckets after delete: %v", err)
 	}

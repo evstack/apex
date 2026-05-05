@@ -194,7 +194,7 @@ func buildCanonicalRequest(r *http.Request, signedHeaders []string, payloadHash 
 		canonicalURI = "/"
 	}
 
-	canonicalQuery := canonicalQueryString(r.URL.Query())
+	canonicalQuery := canonicalQueryString(r.URL.RawQuery)
 
 	var headerBuilder strings.Builder
 	for _, headerName := range signedHeaders {
@@ -218,8 +218,8 @@ func buildCanonicalRequest(r *http.Request, signedHeaders []string, payloadHash 
 	}, "\n"), nil
 }
 
-func canonicalQueryString(values url.Values) string {
-	if len(values) == 0 {
+func canonicalQueryString(rawQuery string) string {
+	if rawQuery == "" {
 		return ""
 	}
 
@@ -228,15 +228,17 @@ func canonicalQueryString(values url.Values) string {
 		value string
 	}
 
-	pairs := make([]pair, 0, len(values))
-	for key, vals := range values {
-		if len(vals) == 0 {
-			pairs = append(pairs, pair{key: key, value: ""})
+	parts := strings.Split(rawQuery, "&")
+	pairs := make([]pair, 0, len(parts))
+	for _, part := range parts {
+		if part == "" {
 			continue
 		}
-		for _, value := range vals {
-			pairs = append(pairs, pair{key: key, value: value})
-		}
+		k, v, _ := strings.Cut(part, "=")
+		// PathUnescape treats '+' as literal '+', not space, matching RFC3986.
+		decodedKey, _ := url.PathUnescape(k)
+		decodedVal, _ := url.PathUnescape(v)
+		pairs = append(pairs, pair{key: decodedKey, value: decodedVal})
 	}
 
 	sort.Slice(pairs, func(i, j int) bool {
@@ -246,11 +248,11 @@ func canonicalQueryString(values url.Values) string {
 		return pairs[i].key < pairs[j].key
 	})
 
-	parts := make([]string, len(pairs))
+	encoded := make([]string, len(pairs))
 	for i, p := range pairs {
-		parts[i] = awsEncode(p.key) + "=" + awsEncode(p.value)
+		encoded[i] = awsEncode(p.key) + "=" + awsEncode(p.value)
 	}
-	return strings.Join(parts, "&")
+	return strings.Join(encoded, "&")
 }
 
 func canonicalHeaderValue(r *http.Request, name string) (string, bool) {
